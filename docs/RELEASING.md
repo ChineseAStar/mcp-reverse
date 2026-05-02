@@ -4,24 +4,23 @@
 
 ---
 
-## 方式一：自动发布（打 Tag 触发 CI）
+## 方式一：自动发布（打 Tag 触发 CI，免密 OIDC）
 
-推送格式为 `v*` 的 tag，GitHub Actions 自动 `npm publish`。
+本项目使用 npm 的 **Provenance (OIDC)** 机制，GitHub Actions 会自动获取临时权限发布包，**无需配置任何 Token**。
 
-### 首次配置（一次性）
+### 前提条件（仅第一次发布需要）
 
-**① 获取 npm token**
+为了让 npm 信任 GitHub Actions，你需要先做一次 **手动发布并绑定出处（Provenance）**：
 
-1. 登录 [npmjs.com](https://www.npmjs.com) → 头像 → Access Tokens
-2. Generate New Token → Classic → 选 `Automation`
-3. 复制 token（只显示一次）
+```bash
+# 1. 登录 npm（需要是能发包的账号）
+npm login
 
-**② 添加到 GitHub Secrets**
+# 2. 正常手动发布一次，加上 --provenance 参数
+npm publish --provenance
+```
 
-1. 打开 `https://github.com/ChineseAStar/mcp-reverse/settings/secrets/actions`
-2. New repository secret
-   - Name: `NPM_TOKEN`
-   - Value: 上面复制的 token
+这次发布成功后，npm 会记录 `ChineseAStar/mcp-reverse` 仓库具有发包权限。以后就可以完全走自动化了。
 
 ### 每次发版
 
@@ -44,13 +43,15 @@ git push --follow-tags
 打 v1.0.1 tag
   → test (Node 20/22/24) 三个并行跑
     → 全部通过
-      → publish job: npm publish
-        → ✅ mcp-reverse@1.0.1 发布成功
+      → publish job: npm publish --provenance
+        → ✅ mcp-reverse@1.0.1 发布成功（自带防伪签名）
 ```
 
 ---
 
-## 方式二：手动发布
+## 方式二：完全手动发布
+
+如果不经过 GitHub Actions，你可以随时在本地手动发布：
 
 ```bash
 cd mcp-reverse
@@ -58,11 +59,8 @@ cd mcp-reverse
 # 1. 登录
 npm login
 
-# 2. 预检（看看会发什么，不会真正发布）
-npm publish --dry-run
-
-# 3. 发布
-npm publish
+# 2. 发布（建议加上 --provenance）
+npm publish --provenance
 ```
 
 ---
