@@ -1,6 +1,8 @@
 /**
- * Common types for mcp-reverse-ws-transport
+ * Common types for mcp-reverse
  */
+
+// ─── Connection Metadata ────────────────────────────────────────────
 
 /** Metadata provided by the internal server when connecting */
 export interface ConnectionMetadata {
@@ -13,6 +15,8 @@ export interface ConnectionMetadata {
   /** Additional arbitrary metadata */
   extra?: Record<string, string>;
 }
+
+// ─── Reconnection ────────────────────────────────────────────────────
 
 /** Reconnection strategy options */
 export interface ReconnectOptions {
@@ -30,7 +34,9 @@ export interface ReconnectOptions {
   maxRetries?: number;
 }
 
-/** Heartbeat (ping/pong) options */
+// ─── Heartbeat ───────────────────────────────────────────────────────
+
+/** Heartbeat (ping/pong) options — WebSocket */
 export interface HeartbeatOptions {
   /** Enable heartbeat (default: true) */
   enabled?: boolean;
@@ -40,7 +46,19 @@ export interface HeartbeatOptions {
   pongTimeout?: number;
 }
 
-/** Options for the WebSocketAcceptor (client side - chat-ai) */
+/** SSE keepalive options */
+export interface SSEHeartbeatOptions {
+  /** Enable keepalive (default: true) */
+  enabled?: boolean;
+  /** Interval between keepalive pings in ms (default: 30000) */
+  pingInterval?: number;
+  /** Timeout waiting for next event before declaring dead (default: 45000) */
+  readTimeout?: number;
+}
+
+// ─── WebSocket Acceptor ──────────────────────────────────────────────
+
+/** Options for the WebSocketAcceptor (public MCP Client side) */
 export interface WebSocketAcceptorOptions {
   /** Port to listen on */
   port: number;
@@ -66,7 +84,9 @@ export interface WebSocketAcceptorOptions {
   handshakeTimeout?: number;
 }
 
-/** Options for the ReverseClientTransport (server side - internal MCP server) */
+// ─── WebSocket Reverse Client ────────────────────────────────────────
+
+/** Options for the WebSocket ReverseClientTransport (internal MCP Server side) */
 export interface ReverseClientTransportOptions {
   /** WebSocket URL to connect to (e.g. 'wss://public-chatai.example.com:9090/ws') */
   url: string;
@@ -86,11 +106,82 @@ export interface ReverseClientTransportOptions {
   queryParams?: Record<string, string>;
 }
 
+// ─── SSE Acceptor ────────────────────────────────────────────────────
+
+/** Options for the SSEAcceptor (public MCP Client side) */
+export interface SSEAcceptorOptions {
+  /**
+   * Authentication tokens keyed by server name.
+   * When set, every connection must provide a matching Bearer token.
+   * Empty map = no auth.
+   */
+  authTokens?: Record<string, string>;
+
+  /**
+   * Custom auth handler. Receives metadata from the connecting server;
+   * return true to allow, false to reject.
+   */
+  authHandler?: (metadata: ConnectionMetadata) => Promise<boolean>;
+
+  /** SSE keepalive configuration */
+  heartbeat?: SSEHeartbeatOptions;
+
+  /** Maximum message size for POST body in bytes (default: 4MB) */
+  maxMessageSize?: number;
+
+  /** Session timeout in ms — if no POST arrives within this window, the session is evicted (default: 60000) */
+  sessionTimeout?: number;
+
+  /** Path prefix for SSE and message endpoints (default: '/mcp-reverse') */
+  pathPrefix?: string;
+}
+
+/** Options for the SSEAcceptor standalone HTTP server (optional) */
+export interface SSEAcceptorStandaloneOptions extends SSEAcceptorOptions {
+  /** Port to listen on */
+  port: number;
+  /** Host to bind to (default: '0.0.0.0') */
+  host?: string;
+}
+
+// ─── SSE Reverse Client ──────────────────────────────────────────────
+
+/** Options for the SSEReverseClientTransport (internal MCP Server side) */
+export interface SSEReverseClientTransportOptions {
+  /**
+   * Base URL of the public SSE acceptor endpoint.
+   * The client appends '/sse' for the event stream and '/message' for POSTs.
+   * Example: 'https://public-chatai.example.com:3000/mcp-reverse'
+   */
+  url: string;
+  /** Server name for identification */
+  serverName: string;
+  /** Authentication token */
+  authToken?: string;
+  /** Reconnection options */
+  reconnect?: ReconnectOptions;
+  /** SSE keepalive options */
+  heartbeat?: SSEHeartbeatOptions;
+  /** Additional headers to send with every request */
+  headers?: Record<string, string>;
+  /** Whether to skip TLS certificate verification (default: false) */
+  insecureTls?: boolean;
+  /** Additional query parameters added to the SSE GET URL */
+  queryParams?: Record<string, string>;
+}
+
+// ─── Event Types ─────────────────────────────────────────────────────
+
 /** Event types for WebSocketAcceptor */
 export type WebSocketAcceptorEvent = 'connection' | 'disconnection' | 'error' | 'listening' | 'close';
 
+/** Event types for SSEAcceptor */
+export type SSEAcceptorEvent = 'connection' | 'disconnection' | 'error';
+
 /** Transport event types */
 export type TransportEvent = 'close' | 'error' | 'message';
+
+// ─── Logging ─────────────────────────────────────────────────────────
 
 /** Log levels */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -113,11 +204,13 @@ export const noopLogger: Logger = {
 
 /** Minimal console logger */
 export const consoleLogger: Logger = {
-  debug: (...args) => console.debug('[mcp-reverse-ws]', ...args),
-  info: (...args) => console.info('[mcp-reverse-ws]', ...args),
-  warn: (...args) => console.warn('[mcp-reverse-ws]', ...args),
-  error: (...args) => console.error('[mcp-reverse-ws]', ...args),
+  debug: (...args) => console.debug('[mcp-reverse]', ...args),
+  info: (...args) => console.info('[mcp-reverse]', ...args),
+  warn: (...args) => console.warn('[mcp-reverse]', ...args),
+  error: (...args) => console.error('[mcp-reverse]', ...args),
 };
+
+// ─── Connection State ────────────────────────────────────────────────
 
 /** Connection state */
 export enum ConnectionState {

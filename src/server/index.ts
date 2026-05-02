@@ -1,7 +1,5 @@
 /**
- * mcp-reverse-ws-transport - Server module
- * 
- * For the internal MCP Server side (behind NAT/firewall).
+ * @deprecated Import from 'mcp-reverse' directly, or from 'mcp-reverse/websocket'.
+ * This module is kept for backward compatibility.
  */
-
-export { ReverseClientTransport } from './reverse-client-transport.js';
+export { ReverseClientTransport } from '../websocket/reverse-client.js';

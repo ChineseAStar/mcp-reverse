@@ -1,9 +1,7 @@
 /**
- * mcp-reverse-ws-transport - Client module
- * 
- * For the public MCP Client side (e.g., chat-ai in the cloud).
+ * @deprecated Import from 'mcp-reverse' directly, or from 'mcp-reverse/websocket'.
+ * This module is kept for backward compatibility.
  */
-
-export { WebSocketAcceptor } from './websocket-acceptor.js';
-export type { AcceptorConnection, ConnectionHandler, DisconnectionHandler, ErrorHandler } from './websocket-acceptor.js';
-export { SingleConnectionTransport } from './single-connection-transport.js';
+export { WebSocketAcceptor } from '../websocket/acceptor.js';
+export type { AcceptorConnection, ConnectionHandler, DisconnectionHandler, ErrorHandler } from '../websocket/acceptor.js';
+export { SingleConnectionTransport } from '../websocket/transport.js';

@@ -19,19 +19,30 @@ npm install
 
 ```
 src/
-├── client/                   ← 公网 MCP Client 端
-│   ├── websocket-acceptor.ts     接受 Server 连接
-│   └── single-connection-transport.ts  单连接 Transport
-├── server/                   ← 内网 MCP Server 端
-│   └── reverse-client-transport.ts   连接 Client 的 Transport
-└── common/
-    ├── types.ts              类型定义
-    ├── heartbeat.ts          Ping/Pong 心跳
-    └── reconnect.ts          指数退避重连
+├── websocket/                # WebSocket 引擎
+│   ├── acceptor.ts           # WebSocketAcceptor（公网 Client 侧）
+│   ├── reverse-client.ts     # ReverseClientTransport（内网 Server 侧）
+│   └── transport.ts          # SingleConnectionTransport
+├── sse/                      # SSE 引擎
+│   ├── acceptor.ts           # SSEAcceptor（公网 Client 侧）
+│   ├── reverse-client.ts     # SSEReverseClientTransport（内网 Server 侧）
+│   ├── connection-transport.ts  # SSEConnectionTransport
+│   └── util.ts               # SSE 解析/格式化工具
+├── common/                   # 共享模块
+│   ├── types.ts              # 所有类型定义
+│   ├── heartbeat.ts          # WebSocket Ping/Pong 心跳
+│   └── reconnect.ts          # 指数退避重连（双引擎复用）
+├── client/                   # （向后兼容）→ websocket/
+├── server/                   # （向后兼容）→ websocket/
+└── index.ts                  # 统一入口，导出全部引擎
 
 tests/
-├── unit/                     单元测试（24 个）
-└── integration/              E2E 集成测试（5 个）
+├── unit/                     # 单元测试（41 个）
+│   ├── sse-util.test.ts
+│   └── sse-connection-transport.test.ts
+└── integration/              # E2E 集成测试（8 个）
+    ├── e2e.test.ts           # WebSocket E2E
+    └── sse-full-features.test.ts  # SSE E2E
 ```
 
 ### 加新功能

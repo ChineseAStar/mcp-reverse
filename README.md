@@ -1,7 +1,7 @@
 # mcp-reverse
 
-> Reverse WebSocket transport for MCP.  
-> Let internal servers behind NAT/firewall connect OUT to your public client.
+> Reverse transports for MCP — WebSocket &amp; SSE engines.  
+> Let internal MCP servers behind NAT/firewall connect OUT to your public client.
 
 ## The Problem
 
@@ -12,22 +12,39 @@ Client (public) ───connect───> Server (public)   ✅ works
 Client (public) ───connect───X Server (NAT)       ❌ unreachable
 ```
 
-`mcp-reverse` **flips the direction at the transport layer.** The Server (internal) initiates the connection; the Client (public) accepts it. The MCP protocol then runs normally over the established channel.
+`mcp-reverse` **flips the direction at the transport layer.** The internal MCP Server initiates the connection; the public MCP Client accepts it. The MCP protocol then runs normally over the established channel.
 
 ```
-Client (public) <───connect──── Server (NAT)       ✅ works
+Public Client (chat-ai) <───incoming──── Internal Server (behind NAT)       ✅ works
 ```
+
+## Two Transport Engines
+
+| Engine | Protocol | Best for |
+|--------|----------|----------|
+| **WebSocket** | `ws://` / `wss://` | Native Node.js, low-latency, high-throughput |
+| **SSE** | HTTP + Server-Sent Events | Next.js, Express, Deno, serverless, any HTTP framework |
+
+### Which engine should I use?
+
+- **WebSocket** — When you control the server (Electron, Docker, bare-metal Node.js) and want the lowest latency.
+- **SSE** — When deploying to a web platform (Next.js App Router, Vercel, Express) that already has an HTTP server. **No extra port needed.**
+
+Both engines support the full MCP feature set: tools, resources, prompts, notifications, logging, etc.
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| 🔌 **Reverse WebSocket** | Server connects to Client via outgoing WebSocket |
-| 🔐 **Auth** | Token header + custom auth handler |
-| ❤️ **Heartbeat** | Ping/Pong keepalive, configurable timeout |
-| 🔄 **Auto-reconnect** | Exponential backoff + jitter |
-| 🔒 **TLS** | WSS on Client side |
-| 🛡️ **All MCP features** | Tools, Prompts, Resources, Roots, Notifications, Elicitation, Sampling, Logging, Instructions — all transparent |
+| Feature | WebSocket | SSE |
+|---------|:---:|:---:|
+| NAT traversal | ✅ | ✅ |
+| Authentication (token + custom handler) | ✅ | ✅ |
+| Keepalive / heartbeat | ✅ Ping/Pong | ✅ SSE comments |
+| Auto-reconnect (exponential backoff + jitter) | ✅ | ✅ |
+| TLS / HTTPS | ✅ WSS | ✅ HTTPS |
+| Tools / Resources / Prompts | ✅ | ✅ |
+| Notifications (both directions) | ✅ | ✅ |
+| Single-port deployment | ❌ | ✅ |
+| Next.js / Vercel / serverless | ❌ | ✅ |
 
 ## Install
 
@@ -35,20 +52,20 @@ Client (public) <───connect──── Server (NAT)       ✅ works
 npm install mcp-reverse
 ```
 
-Requires `@modelcontextprotocol/sdk` ^1.0.0 as peer dependency.
+Requires `@modelcontextprotocol/sdk` as peer dependency and `ws` (for WebSocket engine).
 
 ---
 
-## Quick Start
+## Quick Start — SSE (Recommended for Web Platforms)
 
-### Client Side (Public — chat-ai / cloud)
+### Public Side (chat-ai / Next.js App Router)
 
 ```typescript
-import { WebSocketAcceptor } from 'mcp-reverse';
+import { SSEAcceptor } from 'mcp-reverse';
+// or: import { SSEAcceptor } from 'mcp-reverse/sse';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-const acceptor = new WebSocketAcceptor({
-  port: 9090,
+const acceptor = new SSEAcceptor({
   authTokens: { 'office-server': 'secret123' },
 });
 
@@ -59,7 +76,6 @@ acceptor.onConnection(async ({ transport, metadata }) => {
     { name: 'chat-ai', version: '1.0.0' },
     { capabilities: {} }
   );
-
   await client.connect(transport);
 
   // Use client normally
@@ -70,27 +86,84 @@ acceptor.onConnection(async ({ transport, metadata }) => {
   });
 });
 
+acceptor.onDisconnection((serverName) => console.log(`Disconnected: ${serverName}`));
+
+// ─── Next.js App Router integration ───
+// GET /api/mcp-reverse/sse
+export async function GET(req: NextRequest) {
+  return acceptor.handleSSE(req);
+}
+
+// POST /api/mcp-reverse/message
+export async function POST(req: NextRequest) {
+  return acceptor.handleMessage(req);
+}
+```
+
+**Or run standalone** (creates its own HTTP server):
+
+```typescript
+const acceptor = new SSEAcceptor({ port: 3400, authTokens: { ... } });
+await acceptor.start();  // listens on http://0.0.0.0:3400/mcp-reverse
+```
+
+### Internal Side (behind NAT)
+
+```typescript
+import { SSEReverseClientTransport } from 'mcp-reverse';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+
+const transport = new SSEReverseClientTransport({
+  url: 'https://public-chatai.example.com:3000/mcp-reverse',
+  serverName: 'office-server',
+  authToken: 'secret123',
+  reconnect: { enabled: true },
+});
+
+const server = new Server(
+  { name: 'office-server', version: '1.0.0' },
+  { capabilities: { tools: {}, resources: {}, prompts: {} } }
+);
+
+// ... register tool/resource/prompt handlers ...
+
+await server.connect(transport);
+```
+
+---
+
+## Quick Start — WebSocket
+
+### Public Side
+
+```typescript
+import { WebSocketAcceptor } from 'mcp-reverse';
+// or: import { WebSocketAcceptor } from 'mcp-reverse/websocket';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+
+const acceptor = new WebSocketAcceptor({
+  port: 9090,
+  authTokens: { 'office-server': 'secret123' },
+});
+
+acceptor.onConnection(async ({ transport, metadata }) => {
+  const client = new Client(
+    { name: 'chat-ai', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  await client.connect(transport);
+});
+
 acceptor.onDisconnection((name) => console.log(`Disconnected: ${name}`));
 await acceptor.start();
 ```
 
-### Server Side (Internal — behind NAT)
-
-The Server side is a standard MCP Server. Just use `ReverseClientTransport` instead of `StdioServerTransport`.
+### Internal Side
 
 ```typescript
 import { ReverseClientTransport } from 'mcp-reverse';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 
-// 1. Create the reverse transport (connects OUT to the public client)
 const transport = new ReverseClientTransport({
   url: 'wss://public-chatai.example.com:9090/ws',
   serverName: 'office-server',
@@ -99,142 +172,71 @@ const transport = new ReverseClientTransport({
   heartbeat: { enabled: true },
 });
 
-// 2. Create a standard MCP Server with ALL capabilities
 const server = new Server(
   { name: 'office-server', version: '1.0.0' },
-  {
-    capabilities: {
-      tools: {},
-      resources: { subscribe: true },
-      prompts: {},
-      logging: {},
-    },
-    instructions: 'This server provides internal office tools and data.',
-  },
+  { capabilities: { tools: {}, resources: {}, prompts: {} } }
 );
 
-// ─── Tools ───
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: 'exec',
-      description: 'Execute a shell command',
-      inputSchema: {
-        type: 'object',
-        properties: { cmd: { type: 'string' } },
-        required: ['cmd'],
-      },
-    },
-    {
-      name: 'screenshot',
-      description: 'Take a screenshot',
-      inputSchema: { type: 'object', properties: {} },
-    },
-  ],
-}));
-
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const { name, arguments: args } = req.params;
-  switch (name) {
-    case 'exec':
-      return { content: [{ type: 'text', text: `Ran: ${args.cmd}` }] };
-    case 'screenshot':
-      return { content: [{ type: 'image', data: 'base64...', mimeType: 'image/png' }] };
-    default:
-      return { content: [{ type: 'text', text: 'Unknown tool' }], isError: true };
-  }
-});
-
-// ─── Resources ───
-server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-  resources: [
-    { uri: 'file:///docs/readme.md', name: 'Readme', mimeType: 'text/markdown' },
-  ],
-}));
-
-server.setRequestHandler(ReadResourceRequestSchema, async (req) => ({
-  contents: [{ uri: req.params.uri, mimeType: 'text/markdown', text: '# Hello' }],
-}));
-
-// ─── Prompts ───
-server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-  prompts: [
-    { name: 'review', description: 'Code review prompt',
-      arguments: [{ name: 'file', description: 'File to review', required: true }],
-    },
-  ],
-}));
-
-server.setRequestHandler(GetPromptRequestSchema, async (req) => ({
-  messages: [{ role: 'user', content: { type: 'text', text: `Review ${req.params.arguments?.file}` } }],
-}));
-
-// ─── Notifications: Server can notify the Client ───
-// Tell the Client that tools changed
-await server.sendToolListChanged();
-
-// Tell the Client that resources changed
-await server.sendResourceListChanged();
-
-// Tell the Client a specific resource was updated
-await server.sendResourceUpdated({ uri: 'file:///docs/readme.md' });
-
-// Tell the Client that prompts changed
-await server.sendPromptListChanged();
-
-// Send a log message to the Client
-await server.sendLoggingMessage({
-  level: 'info',
-  data: 'Server initialized',
-});
-
-// ─── Server can also REQUEST from the Client ───
-// List roots (workspaces)
-const roots = await server.listRoots();
-
-// Request LLM sampling
-const msg = await server.createMessage({
-  messages: [{ role: 'user', content: { type: 'text', text: 'Summarize' } }],
-  maxTokens: 100,
-});
-
-// 3. Connect via reverse transport
 await server.connect(transport);
 ```
 
 ---
 
-## All MCP Features — Confirmed Working
-
-| MCP Feature | Client → Server | Server → Client | Handled By |
-|-------------|:---:|:---:|------------|
-| `tools/list` | ✅ Request | — | `ListToolsRequestSchema` |
-| `tools/call` | ✅ Request | — | `CallToolRequestSchema` |
-| `notifications/tools/list_changed` | — | ✅ `server.sendToolListChanged()` | Transport.send() |
-| `resources/list` | ✅ Request | — | `ListResourcesRequestSchema` |
-| `resources/read` | ✅ Request | — | `ReadResourceRequestSchema` |
-| `resources/subscribe` | ✅ Request | — | `SubscribeRequestSchema` |
-| `notifications/resources/list_changed` | — | ✅ `server.sendResourceListChanged()` | Transport.send() |
-| `notifications/resources/updated` | — | ✅ `server.sendResourceUpdated()` | Transport.send() |
-| `prompts/list` | ✅ Request | — | `ListPromptsRequestSchema` |
-| `prompts/get` | ✅ Request | — | `GetPromptRequestSchema` |
-| `notifications/prompts/list_changed` | — | ✅ `server.sendPromptListChanged()` | Transport.send() |
-| `roots/list` | — | ✅ `server.listRoots()` | Transport.send() + response |
-| `notifications/roots/list_changed` | ✅ Client notification | — | Transport.onmessage |
-| `sampling/createMessage` | — | ✅ `server.createMessage()` | Transport.send() + response |
-| `elicitation/create` | — | ✅ `server.elicitInput()` | Transport.send() + response |
-| `notifications/message` (logging) | — | ✅ `server.sendLoggingMessage()` | Transport.send() |
-| `ping` | ✅ Client request | ✅ Server request | Both directions |
-| `completion/complete` | ✅ Request | — | `CompleteRequestSchema` |
-| **Instructions** | — | In `initialize` response | `Server` constructor option |
-
-> **Key insight:** The Transport is a transparent JSON-RPC pipe. Any message that flows through `transport.send()` / `transport.onmessage` works automatically. No special handling per feature.
-
----
-
 ## API Reference
 
-### `WebSocketAcceptor` (Client Side)
+### `SSEAcceptor` (Public Side — SSE)
+
+```typescript
+new SSEAcceptor(options: SSEAcceptorOptions | SSEAcceptorStandaloneOptions)
+```
+
+| Option | Type | Default | Notes |
+|--------|------|---------|-------|
+| `authTokens` | `Record<string, string>` | — | `serverName → token` map |
+| `authHandler` | `async (meta) => boolean` | — | Custom auth logic |
+| `heartbeat` | `SSEHeartbeatOptions` | `{enabled:true}` | Keepalive |
+| `maxMessageSize` | `number` | `4MB` | POST body limit |
+| `sessionTimeout` | `number` | `60000` | Inactivity timeout (ms) |
+| `pathPrefix` | `string` | `'/mcp-reverse'` | URL prefix |
+| `port` | `number` | — | **Standalone only**: listen port |
+
+**Framework mode methods** (Next.js / Express):
+
+- `handleSSE(req)` — Returns HTTP response for GET SSE connections
+- `handleMessage(req)` — Returns HTTP response for POST messages
+
+**Standalone mode methods** (when `port` is provided):
+
+- `start()` / `close()` — Lifecycle
+- `isRunning()` — Whether the server is running
+- `getAddress()` — `{ host, port, pathPrefix }`
+
+**Event handlers** (both modes):
+
+- `onConnection(fn)` — New server connected. Receives `{ transport, metadata, sessionId }`
+- `onDisconnection(fn)` — Server disconnected
+- `onError(fn)` — Error occurred
+
+### `SSEReverseClientTransport` (Internal Side — SSE)
+
+```typescript
+new SSEReverseClientTransport(options: SSEReverseClientTransportOptions)
+```
+
+| Option | Type | Default | Notes |
+|--------|------|---------|-------|
+| `url` | `string` | required | Base URL (appends `/sse` and `/message`) |
+| `serverName` | `string` | required | Server identifier |
+| `authToken` | `string` | — | Bearer token |
+| `reconnect` | `ReconnectOptions` | `{enabled:true}` | Auto-reconnect |
+| `heartbeat` | `SSEHeartbeatOptions` | `{enabled:true}` | Keepalive |
+| `headers` | `Record<string, string>` | — | Extra headers |
+| `insecureTls` | `boolean` | `false` | Skip TLS verify |
+| `queryParams` | `Record<string, string>` | — | Extra query params |
+
+Properties: `state`, `sessionId`, `reconnectAttempts`
+
+### `WebSocketAcceptor` (Public Side — WebSocket)
 
 ```typescript
 new WebSocketAcceptor(options: WebSocketAcceptorOptions)
@@ -246,19 +248,14 @@ new WebSocketAcceptor(options: WebSocketAcceptorOptions)
 | `host` | `string` | `'0.0.0.0'` | Bind address |
 | `path` | `string` | `'/ws'` | Upgrade path |
 | `authTokens` | `Record<string, string>` | — | `serverName → token` map |
-| `authHandler` | `async (meta) => boolean` | — | Custom auth logic |
-| `heartbeat` | `HeartbeatOptions` | `{enabled:false}` | Keepalive |
-| `tls` | `{cert, key}` | — | TLS files for WSS |
+| `authHandler` | `async (meta) => boolean` | — | Custom auth |
+| `heartbeat` | `HeartbeatOptions` | `{enabled:false}` | Ping/Pong |
+| `tls` | `{cert, key}` | — | WSS cert/key files |
 | `maxMessageSize` | `number` | `4MB` | Message limit |
 
-Methods:
-- `start()` / `close()` — lifecycle
-- `onConnection(fn)` — new server connected
-- `onDisconnection(fn)` — server disconnected
-- `onError(fn)` — server error
-- `getAddress()` — `{ host, port, path }`
+Methods: `start()`, `close()`, `onConnection(fn)`, `onDisconnection(fn)`, `onError(fn)`, `getAddress()`
 
-### `ReverseClientTransport` (Server Side)
+### `ReverseClientTransport` (Internal Side — WebSocket)
 
 ```typescript
 new ReverseClientTransport(options: ReverseClientTransportOptions)
@@ -266,43 +263,84 @@ new ReverseClientTransport(options: ReverseClientTransportOptions)
 
 | Option | Type | Default | Notes |
 |--------|------|---------|-------|
-| `url` | `string` | required | Target WebSocket URL |
+| `url` | `string` | required | WebSocket URL |
 | `serverName` | `string` | required | Server identifier |
 | `authToken` | `string` | — | Bearer token |
 | `reconnect` | `ReconnectOptions` | `{enabled:false}` | Auto-reconnect |
-| `heartbeat` | `HeartbeatOptions` | `{enabled:false}` | Keepalive |
+| `heartbeat` | `HeartbeatOptions` | `{enabled:false}` | Ping/Pong |
 | `headers` | `Record<string, string>` | — | Extra headers |
 | `insecureTls` | `boolean` | `false` | Skip TLS verify |
 
-Properties:
-- `state` — `ConnectionState` enum
-- `sessionId` — unique session id
-- `reconnectAttempts` — count
+Properties: `state`, `sessionId`, `reconnectAttempts`
 
 ### Reconnect Options
 
 ```typescript
 {
-  enabled?: boolean;      // default: false
-  initialDelay?: number;  // default: 1000ms
-  maxDelay?: number;      // default: 30000ms
-  multiplier?: number;    // default: 2
-  jitter?: boolean;       // default: true
-  maxRetries?: number;    // default: 0 (infinite)
+  enabled?: boolean;       // WebSocket: default false, SSE: default true
+  initialDelay?: number;   // default: 1000ms
+  maxDelay?: number;       // default: 30000ms
+  multiplier?: number;     // default: 2
+  jitter?: boolean;        // default: true
+  maxRetries?: number;     // default: 0 (infinite)
 }
 ```
 
 ---
 
+## All MCP Features — Confirmed Working
+
+| MCP Feature | WebSocket | SSE |
+|-------------|:---:|:---:|
+| `tools/list` | ✅ | ✅ |
+| `tools/call` | ✅ | ✅ |
+| `notifications/tools/list_changed` | ✅ | ✅ |
+| `resources/list` | ✅ | ✅ |
+| `resources/read` | ✅ | ✅ |
+| `resources/subscribe` | ✅ | ✅ |
+| `notifications/resources/list_changed` | ✅ | ✅ |
+| `notifications/resources/updated` | ✅ | ✅ |
+| `prompts/list` | ✅ | ✅ |
+| `prompts/get` | ✅ | ✅ |
+| `notifications/prompts/list_changed` | ✅ | ✅ |
+| `roots/list` | ✅ | ✅ |
+| `sampling/createMessage` | ✅ | ✅ |
+| `logging` | ✅ | ✅ |
+| `ping` | ✅ | ✅ |
+| **Instructions** | ✅ | ✅ |
+
+> **Key insight:** The Transport is a transparent JSON-RPC pipe. Any message that flows through `transport.send()` / `transport.onmessage` works automatically.
+
+---
+
+## Project Structure
+
+```
+src/
+├── common/                  # Shared utilities
+│   ├── types.ts             # All type definitions
+│   ├── heartbeat.ts         # WebSocket Ping/Pong heartbeat
+│   └── reconnect.ts         # Exponential backoff reconnection
+├── websocket/               # WebSocket engine
+│   ├── acceptor.ts          # WebSocketAcceptor (public side)
+│   ├── reverse-client.ts    # ReverseClientTransport (internal side)
+│   └── transport.ts         # SingleConnectionTransport wrapper
+├── sse/                     # SSE engine
+│   ├── acceptor.ts          # SSEAcceptor (public side)
+│   ├── reverse-client.ts    # SSEReverseClientTransport (internal side)
+│   ├── connection-transport.ts  # SSEConnectionTransport wrapper
+│   └── util.ts              # SSE parsing/formatting utilities
+├── client/                  # (deprecated) Re-exports from websocket/
+├── server/                  # (deprecated) Re-exports from websocket/
+└── index.ts                 # Main entry point — exports all engines
+```
+
 ## Testing
 
 ```bash
-npm test                   # All 29 tests
-npm run test:e2e           # E2E only
-npm run typecheck          # TypeScript check
+npm test                   # All 66 tests (unit + integration)
+npm run build              # TypeScript compilation
 ```
-
----
 
 ## Credits
 
