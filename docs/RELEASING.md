@@ -1,66 +1,56 @@
 # 发布流程
 
-两种方式：**自动（推荐）** 和 **手动**。
+本包推荐使用 **GitHub Actions 自动发布（免密 OIDC）**，不需要管理 npm token。
 
 ---
 
-## 方式一：自动发布（打 Tag 触发 CI，免密 OIDC）
+## 首次发布配置
 
-本项目使用 npm 的 **Provenance (OIDC)** 机制，GitHub Actions 会自动获取临时权限发布包，**无需配置任何 Token**。
+为了让 npm 知道 `ChineseAStar/mcp-reverse` 有权限发布这个包，首次发布请按照以下步骤操作：
 
-### 前提条件（仅第一次发布需要）
+1. 先在本地发一个初始版本（不带 `--provenance`，只是占位）：
+   ```bash
+   npm login
+   npm publish
+   ```
+2. 去 [npm 包设置页](https://www.npmjs.com/package/mcp-reverse/access)（Settings -> Publishing access），将你的 GitHub 仓库绑定为 Trusted Publisher。
+   - GitHub owner: `ChineseAStar`
+   - Repository: `mcp-reverse`
 
-为了让 npm 信任 GitHub Actions，你需要先做一次 **手动发布并绑定出处（Provenance）**：
+之后所有的发布都可以交给自动化流程。
 
-```bash
-# 1. 登录 npm（需要是能发包的账号）
-npm login
+---
 
-# 2. 正常手动发布一次，加上 --provenance 参数
-npm publish --provenance
-```
+## 自动发布（日常流程）
 
-这次发布成功后，npm 会记录 `ChineseAStar/mcp-reverse` 仓库具有发包权限。以后就可以完全走自动化了。
-
-### 每次发版
+之后每次发版，只需要在本地打 tag 并推送到 GitHub 即可，GitHub Actions 会自动处理测试、构建和带有防伪证明（Provenance）的发布。
 
 ```bash
 # 1. 确保在 main 分支且最新
 git checkout main && git pull
 
-# 2. 更新版本号（三选一）
-npm version patch    # 1.0.0 → 1.0.1  修 bug
-npm version minor    # 1.0.0 → 1.1.0  新功能
-npm version major    # 1.0.0 → 2.0.0  破坏性变更
+# 2. 更新版本号（三选一，自动修改 package.json）
+npm version patch    # 1.0.0 → 1.0.1  (修 bug)
+npm version minor    # 1.0.0 → 1.1.0  (加功能)
+npm version major    # 1.0.0 → 2.0.0  (破坏性变更)
 
-# 3. 推送代码 + tag
+# 3. 把改动和 tag 一起推送到 GitHub
 git push --follow-tags
 ```
 
-推送后去看 `https://github.com/ChineseAStar/mcp-reverse/actions`，CI 会自动：
-
-```
-打 v1.0.1 tag
-  → test (Node 20/22/24) 三个并行跑
-    → 全部通过
-      → publish job: npm publish --provenance
-        → ✅ mcp-reverse@1.0.1 发布成功（自带防伪签名）
-```
+推送后，可以在 `https://github.com/ChineseAStar/mcp-reverse/actions` 查看进度。
+成功后，`npm publish --provenance` 会自动由 GitHub Actions 带着身份凭证执行。
 
 ---
 
-## 方式二：完全手动发布
+## 纯手动发布（备选）
 
-如果不经过 GitHub Actions，你可以随时在本地手动发布：
+如果你不想走 GitHub Actions，也可以随时在本地手动发布。
+*注意：本地环境不支持生成 provenance，手动发布时，请确保移除了 `package.json` 中的 `provenance: true` 配置，并且不要加 `--provenance` 参数。*
 
 ```bash
-cd mcp-reverse
-
-# 1. 登录
 npm login
-
-# 2. 发布（建议加上 --provenance）
-npm publish --provenance
+npm publish
 ```
 
 ---
