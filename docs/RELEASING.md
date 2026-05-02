@@ -8,16 +8,22 @@
 
 为了让 npm 知道 `ChineseAStar/mcp-reverse` 有权限发布这个包，首次发布请按照以下步骤操作：
 
-1. 先在本地发一个初始版本（不带 `--provenance`，只是占位）：
+1. 临时移除 `package.json` 中的 provenance 配置（因为本地不支持）：
+   ```json
+   // 暂时删掉这两行
+   "publishConfig": {
+     "provenance": true
+   }
+   ```
+2. 在本地发一个初始版本（不带 `--provenance`，只是为了创建这个包）：
    ```bash
    npm login
    npm publish
    ```
-2. 去 [npm 包设置页](https://www.npmjs.com/package/mcp-reverse/access)（Settings -> Publishing access），将你的 GitHub 仓库绑定为 Trusted Publisher。
+3. 去 [npm 包设置页](https://www.npmjs.com/package/mcp-reverse/access)（Settings -> Publishing access），将你的 GitHub 仓库绑定为 Trusted Publisher。
    - GitHub owner: `ChineseAStar`
    - Repository: `mcp-reverse`
-
-之后所有的发布都可以交给自动化流程。
+4. 把 `package.json` 中的 provenance 配置加回来，提交并推送到 GitHub。
 
 ---
 
