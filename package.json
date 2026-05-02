@@ -1,0 +1,60 @@
+{
+  "name": "mcp-reverse",
+  "version": "1.0.0",
+  "description": "Reverse WebSocket transport for MCP (Model Context Protocol). Allows internal MCP servers behind NAT/firewall to actively connect to public MCP clients.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/mcp-reverse"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/mcp-reverse/issues"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/mcp-reverse#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "websocket",
+    "reverse",
+    "transport",
+    "proxy",
+    "nat",
+    "firewall"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "test": "node --test --import tsx tests/**/*.test.ts",
+    "test:watch": "node --test --watch --import tsx tests/**/*.test.ts",
+    "test:e2e": "node --test --import tsx tests/integration/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run build && npm test"
+  },
+  "dependencies": {
+    "ws": "^8.18.2"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^22.15.18",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3"
+  }
+}

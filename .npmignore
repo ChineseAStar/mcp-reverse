@@ -1,0 +1,9 @@
+.git
+.github
+tests
+src
+node_modules
+*.test.ts
+*.log
+vitest.config.*
+fix_imports.py
