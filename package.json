@@ -5,12 +5,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/mcp-reverse"
+    "url": "https://github.com/ChineseAStar/mcp-reverse"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/mcp-reverse/issues"
+    "url": "https://github.com/ChineseAStar/mcp-reverse/issues"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/mcp-reverse#readme",
+  "homepage": "https://github.com/ChineseAStar/mcp-reverse#readme",
   "keywords": [
     "mcp",
     "model-context-protocol",
