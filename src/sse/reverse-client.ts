@@ -58,7 +58,7 @@ export class SSEReverseClientTransport implements Transport {
     this.reconnectManager = new ReconnectionManager(reconnectOpts, logger);
   }
 
-  get sessionId(): string | undefined {
+  get reverseSessionId(): string | undefined {
     return this._sessionId;
   }
 

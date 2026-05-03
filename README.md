@@ -111,7 +111,8 @@ await acceptor.start();  // listens on http://0.0.0.0:3400/mcp-reverse
 
 ```typescript
 import { SSEReverseClientTransport } from 'mcp-reverse';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 
 const transport = new SSEReverseClientTransport({
   url: 'https://public-chatai.example.com:3000/mcp-reverse',
@@ -120,12 +121,17 @@ const transport = new SSEReverseClientTransport({
   reconnect: { enabled: true },
 });
 
-const server = new Server(
-  { name: 'office-server', version: '1.0.0' },
-  { capabilities: { tools: {}, resources: {}, prompts: {} } }
-);
+const server = new McpServer({
+  name: 'office-server',
+  version: '1.0.0'
+});
 
-// ... register tool/resource/prompt handlers ...
+// Add tools, resources, and prompts
+server.tool('greet',
+  'Greet someone',
+  { name: z.string() },
+  async ({ name }) => ({ content: [{ type: 'text', text: `Hello, ${name}!` }] })
+);
 
 await server.connect(transport);
 ```
@@ -162,7 +168,8 @@ await acceptor.start();
 
 ```typescript
 import { ReverseClientTransport } from 'mcp-reverse';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 
 const transport = new ReverseClientTransport({
   url: 'wss://public-chatai.example.com:9090/ws',
@@ -172,9 +179,16 @@ const transport = new ReverseClientTransport({
   heartbeat: { enabled: true },
 });
 
-const server = new Server(
-  { name: 'office-server', version: '1.0.0' },
-  { capabilities: { tools: {}, resources: {}, prompts: {} } }
+const server = new McpServer({
+  name: 'office-server',
+  version: '1.0.0'
+});
+
+// Add tools, resources, and prompts
+server.tool('greet',
+  'Greet someone',
+  { name: z.string() },
+  async ({ name }) => ({ content: [{ type: 'text', text: `Hello, ${name}!` }] })
 );
 
 await server.connect(transport);

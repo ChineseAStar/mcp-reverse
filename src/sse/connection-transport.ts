@@ -37,7 +37,7 @@ export class SSEConnectionTransport implements Transport {
     this.logger = logger ?? { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
   }
 
-  get sessionId(): string | undefined {
+  get reverseSessionId(): string | undefined {
     return this._sessionId;
   }
 
@@ -51,7 +51,7 @@ export class SSEConnectionTransport implements Transport {
   async start(): Promise<void> {
     // SSEConnectionTransport is "started" as soon as the SSE stream is open.
     // No action needed here — the stream was already established.
-    this.logger.debug(`SSE transport started: ${this.sessionId}`);
+    this.logger.debug(`SSE transport started: ${this.reverseSessionId}`);
   }
 
   /**
@@ -69,7 +69,7 @@ export class SSEConnectionTransport implements Transport {
       id: String(++this._messageEventId),
     });
 
-    this.logger.debug(`SSE send → ${this.sessionId}: ${payload.slice(0, 200)}`);
+    this.logger.debug(`SSE send → ${this.reverseSessionId}: ${payload.slice(0, 200)}`);
 
     if (this._writeCallback) {
       this._writeCallback(sseText);
@@ -81,7 +81,7 @@ export class SSEConnectionTransport implements Transport {
   async close(): Promise<void> {
     if (this._closed) return;
     this._closed = true;
-    this.logger.info(`SSE transport closed: ${this.sessionId}`);
+    this.logger.info(`SSE transport closed: ${this.reverseSessionId}`);
     this.onclose?.();
   }
 
@@ -97,7 +97,7 @@ export class SSEConnectionTransport implements Transport {
     try {
       const parsed = JSON.parse(raw);
       const message = parseMessage(parsed);
-      this.logger.debug(`SSE recv ← ${this.sessionId}: ${raw.slice(0, 200)}`);
+      this.logger.debug(`SSE recv ← ${this.reverseSessionId}: ${raw.slice(0, 200)}`);
       this.onmessage?.(message);
     } catch (err) {
       this.logger.warn(`Failed to parse incoming message: ${(err as Error).message}`);

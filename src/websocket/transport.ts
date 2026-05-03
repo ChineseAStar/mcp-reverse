@@ -42,7 +42,7 @@ export class SingleConnectionTransport implements Transport {
     this.heartbeat = new Heartbeat(heartbeatOptions, logger);
   }
 
-  get sessionId(): string | undefined {
+  get reverseSessionId(): string | undefined {
     return this._sessionId;
   }
 

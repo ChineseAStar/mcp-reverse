@@ -35,7 +35,7 @@
  * ### Internal side (behind NAT):
  * ```typescript
  * import { SSEReverseClientTransport } from 'mcp-reverse';
- * import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+ * import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
  *
  * const transport = new SSEReverseClientTransport({
  *   url: 'https://public-chatai.example.com:3000/mcp-reverse',
