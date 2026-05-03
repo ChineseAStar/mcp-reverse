@@ -50,7 +50,7 @@ describe('SSE Full Features E2E', () => {
     try { await server?.close(); } catch {}
     try { await transport?.close(); } catch {}
     try { await client?.close(); } catch {}
-    try { await acceptor?.close(); } catch {}
+    try { if (acceptor) { acceptor.close(); } } catch {}
   });
 
   it('should support tools + resources + prompts', async () => {

@@ -105,7 +105,7 @@ describe('ReverseClientTransport', () => {
     wss.close();
   });
 
-  it('should have sessionId', async () => {
+  it('should have reverseSessionId', async () => {
     const wss = new WebSocketServer({ port: 0 });
     const port = (wss.address() as { port: number }).port;
     await new Promise<void>((r) => wss.on('listening', r));
@@ -114,7 +114,7 @@ describe('ReverseClientTransport', () => {
     wss.on('connection', () => {});
     await t.start();
     await new Promise((r) => setTimeout(r, 100));
-    assert.ok(t.sessionId && t.sessionId.includes('srv'));
+    assert.ok(t.reverseSessionId && t.reverseSessionId.includes('srv'));
     await t.close();
     wss.close();
   });
