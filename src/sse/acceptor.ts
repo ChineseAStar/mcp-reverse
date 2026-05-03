@@ -70,6 +70,8 @@ interface SSESession {
   lastActivity: number;
   /** Session timeout timer */
   timeoutTimer?: ReturnType<typeof setTimeout>;
+  /** Keepalive interval timer */
+  keepaliveTimer?: ReturnType<typeof setInterval>;
 }
 
 // ─── Standalone Options ──────────────────────────────────────────────
@@ -524,6 +526,12 @@ export class SSEAcceptor {
 
     if (session.timeoutTimer) {
       clearTimeout(session.timeoutTimer);
+      session.timeoutTimer = undefined;
+    }
+
+    if (session.keepaliveTimer) {
+      clearInterval(session.keepaliveTimer);
+      session.keepaliveTimer = undefined;
     }
 
     // Close the transport
@@ -599,6 +607,9 @@ export class SSEAcceptor {
         }
       }
     }, interval);
+
+    // Store the timer so it can be cleared on session destroy
+    session.keepaliveTimer = timer;
   }
 
   private startKeepaliveNode(session: SSESession, res: ServerResponse): void {
@@ -613,6 +624,9 @@ export class SSEAcceptor {
       }
       res.write(formatSSEPing());
     }, interval);
+
+    // Store the timer so it can be cleared on session destroy
+    session.keepaliveTimer = timer;
   }
 
   // ─── Internal: Auth ─────────────────────────────────────────────

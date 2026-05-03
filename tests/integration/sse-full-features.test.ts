@@ -50,12 +50,12 @@ describe('SSE Full Features E2E', () => {
     try { await server?.close(); } catch {}
     try { await transport?.close(); } catch {}
     try { await client?.close(); } catch {}
-    try { if (acceptor) { acceptor.close(); } } catch {}
+    try { if (acceptor) { await acceptor.close(); } } catch {}
   });
 
   it('should support tools + resources + prompts', async () => {
     // ═══ Public side: SSEAcceptor + MCP Client ═══
-    acceptor = new SSEAcceptor({ port, authTokens: { 'test-srv': 'tok' } });
+    acceptor = new SSEAcceptor({ port, authTokens: { 'test-srv': 'tok' }, heartbeat: { enabled: false } });
 
     const clientPromise = new Promise<Client>((resolve) => {
       acceptor.onConnection(async ({ transport: acceptorTransport }) => {

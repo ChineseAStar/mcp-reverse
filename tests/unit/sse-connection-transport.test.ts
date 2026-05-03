@@ -8,7 +8,7 @@ import { SSEConnectionTransport } from '../../src/sse/connection-transport.js';
 describe('SSEConnectionTransport', () => {
   it('should have a sessionId', () => {
     const t = new SSEConnectionTransport('test-session-123');
-    assert.strictEqual(t.sessionId, 'test-session-123');
+    assert.strictEqual(t.reverseSessionId, 'test-session-123');
   });
 
   it('should start successfully', async () => {

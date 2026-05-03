@@ -28,7 +28,7 @@ describe('SingleConnectionTransport', () => {
   it('start and sessionId', async () => {
     const { transport, clientWs, wss } = await makePair();
     await transport.start();
-    assert.strictEqual(transport.sessionId, 'sid-1');
+    assert.strictEqual(transport.reverseSessionId, 'sid-1');
     assert.strictEqual(transport.isClosed(), false);
     await transport.close();
     clientWs.close();
