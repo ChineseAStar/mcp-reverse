@@ -24,9 +24,6 @@
     "firewall"
   ],
   "type": "module",
-  "publishConfig": {
-    "provenance": true
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -292,6 +292,11 @@ export class SSEAcceptor {
         controller.enqueue(`: connected ${session.sessionId}\n\n`);
         session.readyResolve();
 
+        // Wire up the transport write path to the SSE stream
+        session.transport.setWriteCallback((data) => {
+          try { controller.enqueue(data); } catch { /* stream closed */ }
+        });
+
         this.emitConnection(session);
         this.startKeepalive(session);
       },
