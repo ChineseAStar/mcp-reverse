@@ -62,7 +62,7 @@ interface SSESession {
   metadata: ConnectionMetadata;
   transport: SSEConnectionTransport;
   /** Controller for the SSE write stream */
-  controller: ReadableStreamDefaultController<string> | null;
+  controller: ReadableStreamDefaultController<Uint8Array> | null;
   /** Resolved when session is fully initialized */
   readyPromise: Promise<void>;
   readyResolve: () => void;
@@ -287,16 +287,24 @@ export class SSEAcceptor {
 
     const session = this.createSession(metadata);
 
-    const stream = new ReadableStream({
+    // Listen for client disconnect (e.g. Vercel / Cloudflare standard)
+    if (req.signal) {
+      req.signal.addEventListener('abort', () => {
+        this.destroySession(session);
+      });
+    }
+
+    const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
+        const encoder = new TextEncoder();
         session.controller = controller;
         // Send an initial comment to confirm the stream is open
-        controller.enqueue(`: connected ${session.sessionId}\n\n`);
+        controller.enqueue(encoder.encode(`: connected ${session.sessionId}\n\n`));
         session.readyResolve();
 
         // Wire up the transport write path to the SSE stream
         session.transport.setWriteCallback((data) => {
-          try { controller.enqueue(data); } catch { /* stream closed */ }
+          try { controller.enqueue(encoder.encode(data)); } catch { /* stream closed */ }
         });
 
         this.emitConnection(session);
@@ -570,7 +578,8 @@ export class SSEAcceptor {
 
     if (session.controller) {
       // Next.js ReadableStream mode
-      session.controller.enqueue(sseText);
+      const encoder = new TextEncoder();
+      session.controller.enqueue(encoder.encode(sseText));
     }
     // Node.js mode: write happens via the transport's write callback
   }
@@ -594,6 +603,7 @@ export class SSEAcceptor {
     if (hb?.enabled === false) return;
 
     const interval = hb?.pingInterval ?? 30_000;
+    const encoder = new TextEncoder();
     const timer = setInterval(() => {
       if (!this.sessions.has(session.sessionId)) {
         clearInterval(timer);
@@ -601,7 +611,7 @@ export class SSEAcceptor {
       }
       if (session.controller) {
         try {
-          session.controller.enqueue(formatSSEPing());
+          session.controller.enqueue(encoder.encode(formatSSEPing()));
         } catch {
           clearInterval(timer);
         }
