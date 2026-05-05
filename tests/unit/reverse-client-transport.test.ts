@@ -5,8 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { WebSocketServer, WebSocket } from 'ws';
-import { ReverseClientTransport } from '../../src/server/reverse-client-transport.js';
-import { ConnectionState } from '../../src/common/types.js';
+import { ReverseClientTransport } from '../../src/websocket/reverse-client.js';
 
 const L = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
@@ -20,7 +19,6 @@ describe('ReverseClientTransport', () => {
     const p = new Promise<void>((resolve) => { wss.on('connection', (_ws, req) => { assert.strictEqual(req.headers['x-mcp-server-name'], 'srv'); resolve(); }); });
     await t.start();
     await p;
-    assert.strictEqual(t.state, ConnectionState.CONNECTED);
     await t.close();
     wss.close();
   });
@@ -69,17 +67,20 @@ describe('ReverseClientTransport', () => {
     wss.close();
   });
 
-  it('should reconnect', { timeout: 15000 }, async () => {
+  it('should fire onclose on disconnect (no auto-reconnect)', { timeout: 10000 }, async () => {
     const wss = new WebSocketServer({ port: 0 });
     const port = (wss.address() as { port: number }).port;
     await new Promise<void>((r) => wss.on('listening', r));
 
-    const t = new ReverseClientTransport({ url: `ws://localhost:${port}/ws`, serverName: 'srv', reconnect: { enabled: true, initialDelay: 200, maxDelay: 1000 }, heartbeat: { enabled: false } }, L);
-    let count = 0;
-    wss.on('connection', (ws) => { count++; if (count === 1) setTimeout(() => ws.close(), 100); });
+    const t = new ReverseClientTransport({ url: `ws://localhost:${port}/ws`, serverName: 'srv', reconnect: { enabled: false }, heartbeat: { enabled: false } }, L);
+    let connectCount = 0;
+    wss.on('connection', (ws) => { connectCount++; setTimeout(() => ws.close(), 100); });
+    const closePromise = new Promise<void>((r) => { t.onclose = r; });
     await t.start();
-    await new Promise((r) => setTimeout(r, 2000));
-    assert.ok(count >= 2, `Expected >=2 connections, got ${count}`);
+    await closePromise;
+    // Transport fires onclose but does NOT auto-reconnect; that's the external manager's job
+    await new Promise((r) => setTimeout(r, 1000));
+    assert.strictEqual(connectCount, 1, 'Transport should NOT auto-reconnect');
     await t.close();
     wss.close();
   });

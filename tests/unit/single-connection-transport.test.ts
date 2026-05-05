@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { WebSocket, WebSocketServer } from 'ws';
-import { SingleConnectionTransport } from '../../src/client/single-connection-transport.js';
+import { SingleConnectionTransport } from '../../src/websocket/transport.js';
 
 async function makePair() {
   const wss = new WebSocketServer({ port: 0 });

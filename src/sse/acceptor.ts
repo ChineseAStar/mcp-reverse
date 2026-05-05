@@ -505,7 +505,12 @@ export class SSEAcceptor {
     const readyPromise = new Promise<void>((r) => { readyResolve = r; });
 
     const transport = new SSEConnectionTransport(sessionId, this.logger);
-    transport.onclose = () => this.destroySessionByServerName(metadata.serverName);
+    transport.onclose = () => {
+      // Destroy by sessionId, NOT by serverName — if two sessions share the
+      // same server name, destroying by name would kill the wrong one.
+      const s = this.sessions.get(sessionId);
+      if (s) this.destroySession(s);
+    };
 
     const session: SSESession = {
       sessionId,
@@ -532,6 +537,10 @@ export class SSEAcceptor {
 
     this.logger.info(`SSE session closed: ${session.sessionId} (${session.serverName})`);
 
+    // Delete from map FIRST — prevents re-entrancy from transport.destroy()
+    // which fires onclose → destroySessionByServerName → destroySession.
+    this.sessions.delete(session.sessionId);
+
     if (session.timeoutTimer) {
       clearTimeout(session.timeoutTimer);
       session.timeoutTimer = undefined;
@@ -549,8 +558,6 @@ export class SSEAcceptor {
     if (session.controller) {
       try { session.controller.close(); } catch { /* already closed */ }
     }
-
-    this.sessions.delete(session.sessionId);
 
     // Emit disconnection
     for (const handler of this.disconnectionHandlers) {

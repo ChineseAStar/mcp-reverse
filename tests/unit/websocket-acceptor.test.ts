@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { WebSocket } from 'ws';
-import { WebSocketAcceptor } from '../../src/client/websocket-acceptor.js';
+import { WebSocketAcceptor } from '../../src/websocket/acceptor.js';
 
 describe('WebSocketAcceptor', () => {
   it('should start and stop', async () => {

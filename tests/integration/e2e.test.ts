@@ -5,8 +5,8 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { WebSocketAcceptor } from '../../src/client/websocket-acceptor.js';
-import { ReverseClientTransport } from '../../src/server/reverse-client-transport.js';
+import { WebSocketAcceptor } from '../../src/websocket/acceptor.js';
+import { ReverseClientTransport } from '../../src/websocket/reverse-client.js';
 
 describe('Full Features E2E', () => {
   it('tools + resources + prompts + notifications', async () => {

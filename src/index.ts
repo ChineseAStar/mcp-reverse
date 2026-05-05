@@ -4,71 +4,17 @@
  * Reverse transports for MCP (Model Context Protocol).
  * Allows internal MCP servers behind NAT/firewall to actively connect
  * to public MCP clients.
- *
- * ## Two Transport Engines
- *
- * | Engine     | Best for                                      | Protocol         |
- * |------------|-----------------------------------------------|------------------|
- * | WebSocket  | Native Node.js, low-latency, high-throughput  | `ws://` / `wss://` |
- * | SSE        | Next.js, Express, Deno, serverless platforms  | `http://` + SSE  |
- *
- * ## Quick Start — SSE (recommended for web platforms)
- *
- * ### Public side (e.g. chat-ai, Next.js App Router):
- * ```typescript
- * import { SSEAcceptor } from 'mcp-reverse';
- * import { Client } from '@modelcontextprotocol/sdk/client/index.js';
- *
- * const acceptor = new SSEAcceptor({ authTokens: { 'my-server': 'secret' } });
- *
- * acceptor.onConnection(async ({ transport, metadata }) => {
- *   const client = new Client({ name: 'chat-ai', version: '1.0.0' }, { capabilities: {} });
- *   await client.connect(transport);
- *   // Use client.listTools(), client.callTool(), etc.
- * });
- *
- * // Next.js App Router:
- * // GET /api/mcp-reverse/sse → acceptor.handleSSE(req)
- * // POST /api/mcp-reverse/message → acceptor.handleMessage(req)
- * ```
- *
- * ### Internal side (behind NAT):
- * ```typescript
- * import { SSEReverseClientTransport } from 'mcp-reverse';
- * import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
- *
- * const transport = new SSEReverseClientTransport({
- *   url: 'https://public-chatai.example.com:3000/mcp-reverse',
- *   serverName: 'my-server',
- *   authToken: 'secret',
- * });
- *
- * const server = new Server({ name: 'my-server', version: '1.0.0' }, { capabilities: {} });
- * await server.connect(transport);
- * ```
- *
- * ## Quick Start — WebSocket
- *
- * ### Public side:
- * ```typescript
- * import { WebSocketAcceptor } from 'mcp-reverse';
- *
- * const acceptor = new WebSocketAcceptor({ port: 9090, authTokens: { 'my-server': 'secret' } });
- * acceptor.onConnection(async ({ transport, metadata }) => { ... });
- * await acceptor.start();
- * ```
- *
- * ### Internal side:
- * ```typescript
- * import { ReverseClientTransport } from 'mcp-reverse';
- *
- * const transport = new ReverseClientTransport({
- *   url: 'wss://public-chatai.example.com:9090/ws',
- *   serverName: 'my-server',
- *   authToken: 'secret',
- * });
- * ```
  */
+
+// ─── High-Level Client (recommended for all integrations) ─────────────
+
+export { ReverseMCPClient } from './client/index.js';
+export type {
+  ReverseMCPClientSSEOptions,
+  ReverseMCPClientWSOptions,
+  ReverseMCPClientEvent,
+  ReverseMCPClientEvents,
+} from './client/index.js';
 
 // ─── WebSocket Engine ────────────────────────────────────────────────
 

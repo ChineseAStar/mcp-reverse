@@ -1,11 +1,14 @@
 /**
  * ReverseClientTransport
  * 
+ * Pure Transport implementation for reverse WebSocket connections.
  * Used by the internal MCP Server behind NAT/firewall.
- * Connects out to the public MCP Client (chat-ai) via WebSocket,
- * then provides a Transport interface that the MCP Server can use.
+ * Connects out to the public MCP Client (chat-ai) via WebSocket.
  * 
- * Includes: automatic reconnection, heartbeat, authentication.
+ * NOTE: This transport does NOT handle reconnection.
+ * Reconnection policy is managed externally by ReverseMCPClient.
+ * 
+ * Includes: heartbeat, authentication, message buffering.
  */
 
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -15,12 +18,10 @@ import WebSocket from 'ws';
 import type {
   ReverseClientTransportOptions,
   HeartbeatOptions,
-  ReconnectOptions,
   Logger,
 } from '../common/types.js';
-import { ConnectionState, noopLogger } from '../common/types.js';
+import { noopLogger } from '../common/types.js';
 import { Heartbeat } from '../common/heartbeat.js';
-import { ReconnectionManager } from '../common/reconnect.js';
 
 const parseMessage = (raw: unknown): JSONRPCMessage => {
   return JSONRPCMessageSchema.parse(raw);
@@ -31,14 +32,11 @@ export class ReverseClientTransport implements Transport {
   private options: ReverseClientTransportOptions;
   private logger: Logger;
   private heartbeat: Heartbeat;
-  private reconnectManager: ReconnectionManager;
   private _sessionId?: string;
   private _closed: boolean = false;
   private _started: boolean = false;
-  private reconnectPending: boolean = false;
-  private messageHandlers: Array<(message: JSONRPCMessage) => void> = [];
 
-  // For message buffering during reconnection
+  // Message buffering during reconnection
   private pendingMessages: Array<{ message: JSONRPCMessage; resolve: () => void; reject: (err: Error) => void }> = [];
 
   onclose?: () => void;
@@ -50,25 +48,14 @@ export class ReverseClientTransport implements Transport {
     this.logger = logger ?? noopLogger;
 
     const heartbeatOpts: HeartbeatOptions = options.heartbeat ?? { enabled: true };
-    const reconnectOpts: ReconnectOptions = options.reconnect ?? { enabled: true };
-
     this.heartbeat = new Heartbeat(heartbeatOpts, logger);
-    this.reconnectManager = new ReconnectionManager(reconnectOpts, logger);
   }
 
   get reverseSessionId(): string | undefined {
     return this._sessionId;
   }
 
-  /** Current connection state */
-  get state(): ConnectionState {
-    return this.reconnectManager.getState();
-  }
-
-  /** Number of reconnection attempts */
-  get reconnectAttempts(): number {
-    return this.reconnectManager.getAttempts();
-  }
+  // ─── Transport Interface ─────────────────────────────────────────
 
   async start(): Promise<void> {
     if (this._started) {
@@ -79,21 +66,7 @@ export class ReverseClientTransport implements Transport {
     }
 
     this._started = true;
-    this._sessionId = `${this.options.serverName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-    this.reconnectManager.setReconnectHandler(async () => {
-      await this.doConnect();
-    });
-
-    this.reconnectManager.setStateChangeHandler((state) => {
-      this.logger.info(`Connection state: ${state}`);
-    });
-
-    if (this.options.reconnect?.enabled !== false) {
-      await this.reconnectManager.start();
-    } else {
-      await this.doConnect();
-    }
+    await this.doConnect();
   }
 
   async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
@@ -101,15 +74,10 @@ export class ReverseClientTransport implements Transport {
       throw new Error('Transport is closed');
     }
 
-    // Handle reconnection buffer
-    if (this.reconnectPending && this.options.reconnect?.enabled !== false) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return new Promise<void>((resolve, reject) => {
         this.pendingMessages.push({ message, resolve, reject });
       });
-    }
-
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket is not connected');
     }
 
     return new Promise((resolve, reject) => {
@@ -131,7 +99,6 @@ export class ReverseClientTransport implements Transport {
     this._started = false;
 
     this.heartbeat.stop();
-    this.reconnectManager.close();
     this.flushPendingMessages(new Error('Transport closed'));
 
     if (this.ws) {
@@ -147,10 +114,10 @@ export class ReverseClientTransport implements Transport {
     return this.ws;
   }
 
+  // ─── Internal ────────────────────────────────────────────────────
+
   private buildUrl(): string {
     const url = new URL(this.options.url);
-
-    // Add query params
     url.searchParams.set('server_name', this.options.serverName);
     if (this.options.authToken) {
       url.searchParams.set('token', this.options.authToken);
@@ -160,7 +127,6 @@ export class ReverseClientTransport implements Transport {
         url.searchParams.set(key, value);
       }
     }
-
     return url.toString();
   }
 
@@ -168,15 +134,12 @@ export class ReverseClientTransport implements Transport {
     const headers: Record<string, string> = {
       'X-MCP-Server-Name': this.options.serverName,
     };
-
     if (this.options.authToken) {
       headers['Authorization'] = `Bearer ${this.options.authToken}`;
     }
-
     if (this.options.headers) {
       Object.assign(headers, this.options.headers);
     }
-
     return headers;
   }
 
@@ -192,7 +155,6 @@ export class ReverseClientTransport implements Transport {
       const ws = new WebSocket(url, {
         headers,
         rejectUnauthorized: !this.options.insecureTls,
-        // Allow handshake to take longer on slow connections
         handshakeTimeout: 15000,
       });
 
@@ -215,7 +177,6 @@ export class ReverseClientTransport implements Transport {
           ws.terminate();
         });
 
-        this.reconnectManager.onConnected();
         this.flushPendingMessages();
         this.logger.info(`Connected to ${url}`);
         resolve();
@@ -224,14 +185,7 @@ export class ReverseClientTransport implements Transport {
       ws.on('error', (err: Error & { code?: string }) => {
         clearTimeout(connectTimeout);
         this.logger.error(`Connection error to ${url}: ${err.message} (code: ${err.code ?? 'unknown'})`);
-
-        if (this.options.reconnect?.enabled !== false) {
-          // Don't reject - let reconnection manager handle it
-          this.reconnectManager.onDisconnected().catch(() => {});
-          resolve(); // Resolve so reconnection manager continues
-        } else {
-          reject(err);
-        }
+        reject(err);
       });
     });
   }
@@ -257,12 +211,7 @@ export class ReverseClientTransport implements Transport {
       this.heartbeat.stop();
 
       if (!this._closed) {
-        this.reconnectPending = true;
         this.onclose?.();
-
-        if (this.options.reconnect?.enabled !== false) {
-          this.reconnectManager.onDisconnected().catch(() => {});
-        }
       }
     });
   }
@@ -283,6 +232,5 @@ export class ReverseClientTransport implements Transport {
         resolve();
       }
     }
-    this.reconnectPending = false;
   }
 }

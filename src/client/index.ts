@@ -1,7 +1,13 @@
 /**
- * @deprecated Import from 'mcp-reverse' directly, or from 'mcp-reverse/websocket'.
- * This module is kept for backward compatibility.
+ * mcp-reverse — Client module
+ *
+ * High-level client for connecting MCP Servers to remote MCP Clients via reverse transports.
  */
-export { WebSocketAcceptor } from '../websocket/acceptor.js';
-export type { AcceptorConnection, ConnectionHandler, DisconnectionHandler, ErrorHandler } from '../websocket/acceptor.js';
-export { SingleConnectionTransport } from '../websocket/transport.js';
+
+export { ReverseMCPClient } from './reverse-mcp-client.js';
+export type {
+  ReverseMCPClientSSEOptions,
+  ReverseMCPClientWSOptions,
+  ReverseMCPClientEvent,
+  ReverseMCPClientEvents,
+} from './reverse-mcp-client.js';
