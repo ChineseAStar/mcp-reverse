@@ -53,6 +53,11 @@ export {
   consoleLogger,
 } from './common/types.js';
 
+// ─── Proxy / Gateway ────────────────────────────────────────────────
+
+export { ReverseProxy } from './proxy/index.js';
+export type { ProxyConfig } from './proxy/index.js';
+
 // ─── Utilities ───────────────────────────────────────────────────────
 
 export { Heartbeat } from './common/heartbeat.js';
