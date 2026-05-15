@@ -1,6 +1,6 @@
 {
   "name": "mcp-reverse",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Reverse transports for MCP (Model Context Protocol) — WebSocket & SSE engines. Allows internal MCP servers behind NAT/firewall to connect out to public MCP clients.",
   "license": "MIT",
   "repository": {
