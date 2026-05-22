@@ -14,7 +14,7 @@
 
 import { ReverseProxy } from './proxy/index.js';
 import type { ProxyConfig } from './proxy/index.js';
-import { consoleLogger } from './common/types.js';
+import { consoleLogger } from './protocol/types.js';
 
 // ─── Help ─────────────────────────────────────────────────────────────
 

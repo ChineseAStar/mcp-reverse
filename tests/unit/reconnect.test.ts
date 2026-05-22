@@ -4,8 +4,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { ReconnectionManager } from '../../src/common/reconnect.js';
-import { ConnectionState } from '../../src/common/types.js';
+import { ReconnectionManager } from '../../src/protocol/reconnect.js';
+import { ConnectionState } from '../../src/protocol/types.js';
 
 describe('ReconnectionManager', () => {
   it('state transitions', async () => {

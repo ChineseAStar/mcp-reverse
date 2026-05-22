@@ -21,9 +21,9 @@ import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
 import type {
   SSEReverseClientTransportOptions,
   Logger,
-} from '../common/types.js';
-import { noopLogger } from '../common/types.js';
-import { SSEParser } from './util.js';
+} from '../protocol/types.js';
+import { noopLogger } from '../protocol/types.js';
+import { SSEParser } from '../transport/sse-util.js';
 
 const parseMessage = (raw: unknown): JSONRPCMessage => {
   return JSONRPCMessageSchema.parse(raw);

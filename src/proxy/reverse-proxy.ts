@@ -15,11 +15,11 @@
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SSEAcceptor } from '../sse/index.js';
-import type { SSEConnectionTransport } from '../sse/index.js';
+import { SSEAcceptor } from '../acceptor/sse-acceptor.js';
+import type { SSEConnectionTransport } from '../transport/sse-transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { Logger } from '../common/types.js';
-import { noopLogger } from '../common/types.js';
+import type { Logger } from '../protocol/types.js';
+import { noopLogger } from '../protocol/types.js';
 import type { ProxyConfig } from './types.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────

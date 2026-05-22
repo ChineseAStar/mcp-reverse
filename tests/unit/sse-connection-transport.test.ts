@@ -3,7 +3,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { SSEConnectionTransport } from '../../src/sse/connection-transport.js';
+import { SSEConnectionTransport } from '../../src/transport/sse-transport.js';
 
 describe('SSEConnectionTransport', () => {
   it('should have a sessionId', () => {

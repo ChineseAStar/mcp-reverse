@@ -1,7 +1,7 @@
 {
   "name": "mcp-reverse",
-  "version": "1.0.9",
-  "description": "Reverse transports for MCP (Model Context Protocol) — WebSocket & SSE engines. Allows internal MCP servers behind NAT/firewall to connect out to public MCP clients.",
+  "version": "2.0.0",
+  "description": "Reverse transports for MCP (Model Context Protocol) — SSE engine. Allows internal MCP servers behind NAT/firewall to connect out to public MCP clients.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,7 +14,6 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "websocket",
     "sse",
     "server-sent-events",
     "reverse",
@@ -34,17 +33,25 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./client": {
-      "import": "./dist/client/index.js",
-      "types": "./dist/client/index.d.ts"
+    "./connector": {
+      "import": "./dist/connector/index.js",
+      "types": "./dist/connector/index.d.ts"
     },
-    "./websocket": {
-      "import": "./dist/websocket/index.js",
-      "types": "./dist/websocket/index.d.ts"
+    "./client": {
+      "import": "./dist/connector/index.js",
+      "types": "./dist/connector/index.d.ts"
+    },
+    "./acceptor": {
+      "import": "./dist/acceptor/index.js",
+      "types": "./dist/acceptor/index.d.ts"
     },
     "./sse": {
       "import": "./dist/sse/index.js",
       "types": "./dist/sse/index.d.ts"
+    },
+    "./transport": {
+      "import": "./dist/transport/index.js",
+      "types": "./dist/transport/index.d.ts"
     },
     "./proxy": {
       "import": "./dist/proxy/index.js",
@@ -65,16 +72,13 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run clean && npm run build && npm test"
   },
-  "dependencies": {
-    "ws": "^8.18.2"
-  },
+  "dependencies": {},
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^22.15.18",
-    "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   }

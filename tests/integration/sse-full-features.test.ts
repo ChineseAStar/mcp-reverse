@@ -6,8 +6,8 @@
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { SSEAcceptor } from '../../src/sse/acceptor.js';
-import { SSEReverseClientTransport } from '../../src/sse/reverse-client.js';
+import { SSEAcceptor } from '../../src/acceptor/sse-acceptor.js';
+import { SSEReverseClientTransport } from '../../src/connector/sse-connector.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {

@@ -36,10 +36,10 @@ import type {
   ConnectionMetadata,
   SSEHeartbeatOptions,
   Logger,
-} from '../common/types.js';
-import { noopLogger } from '../common/types.js';
-import { formatSSEEvent, formatSSEPing, getHeader, extractExtraHeaders } from './util.js';
-import { SSEConnectionTransport } from './connection-transport.js';
+} from '../protocol/types.js';
+import { noopLogger } from '../protocol/types.js';
+import { formatSSEEvent, formatSSEPing, getHeader, extractExtraHeaders } from '../transport/sse-util.js';
+import { SSEConnectionTransport } from '../transport/sse-transport.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 

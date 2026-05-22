@@ -14,8 +14,8 @@
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
-import { formatSSEEvent } from './util.js';
-import type { Logger } from '../common/types.js';
+import { formatSSEEvent } from './sse-util.js';
+import type { Logger } from '../protocol/types.js';
 
 const parseMessage = (raw: unknown): JSONRPCMessage => {
   return JSONRPCMessageSchema.parse(raw);

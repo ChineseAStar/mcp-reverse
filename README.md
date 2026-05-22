@@ -1,6 +1,6 @@
 # mcp-reverse
 
-> Reverse transports for MCP — WebSocket &amp; SSE engines.  
+> Reverse transports for MCP — SSE engine.  
 > Let internal MCP servers behind NAT/firewall connect OUT to your public client.
 
 ## The Problem
@@ -18,33 +18,18 @@ Client (public) ───connect───X Server (NAT)       ❌ unreachable
 Public Client (chat-ai) <───incoming──── Internal Server (behind NAT)       ✅ works
 ```
 
-## Two Transport Engines
-
-| Engine | Protocol | Best for |
-|--------|----------|----------|
-| **WebSocket** | `ws://` / `wss://` | Native Node.js, low-latency, high-throughput |
-| **SSE** | HTTP + Server-Sent Events | Next.js, Express, Deno, serverless, any HTTP framework |
-
-### Which engine should I use?
-
-- **WebSocket** — When you control the server (Electron, Docker, bare-metal Node.js) and want the lowest latency.
-- **SSE** — When deploying to a web platform (Next.js App Router, Vercel, Express) that already has an HTTP server. **No extra port needed.**
-
-Both engines support the full MCP feature set: tools, resources, prompts, notifications, logging, etc.
-
 ## Features
 
-| Feature | WebSocket | SSE |
-|---------|:---:|:---:|
-| NAT traversal | ✅ | ✅ |
-| Authentication (token + custom handler) | ✅ | ✅ |
-| Keepalive / heartbeat | ✅ Ping/Pong | ✅ SSE comments |
-| Auto-reconnect (exponential backoff + jitter) | ✅ | ✅ |
-| TLS / HTTPS | ✅ WSS | ✅ HTTPS |
-| Tools / Resources / Prompts | ✅ | ✅ |
-| Notifications (both directions) | ✅ | ✅ |
-| Single-port deployment | ❌ | ✅ |
-| Next.js / Vercel / serverless | ❌ | ✅ |
+| Feature | Support |
+|---------|:---:|
+| NAT traversal | ✅ |
+| Authentication (token + custom handler) | ✅ |
+| Keepalive / heartbeat | ✅ SSE comments |
+| Auto-reconnect (exponential backoff + jitter) | ✅ |
+| TLS / HTTPS | ✅ |
+| Tools / Resources / Prompts | ✅ |
+| Notifications (both directions) | ✅ |
+| Next.js / Vercel / serverless | ✅ |
 
 ## Install
 
@@ -52,17 +37,16 @@ Both engines support the full MCP feature set: tools, resources, prompts, notifi
 npm install mcp-reverse
 ```
 
-Requires `@modelcontextprotocol/sdk` as peer dependency and `ws` (for WebSocket engine).
+Requires `@modelcontextprotocol/sdk` as peer dependency.
 
 ---
 
-## Quick Start — SSE (Recommended for Web Platforms)
+## Quick Start — SSE
 
 ### Public Side (chat-ai / Next.js App Router)
 
 ```typescript
 import { SSEAcceptor } from 'mcp-reverse';
-// or: import { SSEAcceptor } from 'mcp-reverse/sse';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
 const acceptor = new SSEAcceptor({
@@ -80,21 +64,15 @@ acceptor.onConnection(async ({ transport, metadata }) => {
 
   // Use client normally
   const tools = await client.listTools();
-  const result = await client.callTool({
-    name: 'exec',
-    arguments: { cmd: 'ls' },
-  });
+  const result = await client.callTool({ name: 'exec', arguments: { cmd: 'ls' } });
 });
 
 acceptor.onDisconnection((serverName) => console.log(`Disconnected: ${serverName}`));
 
 // ─── Next.js App Router integration ───
-// GET /api/mcp-reverse/sse
 export async function GET(req: NextRequest) {
   return acceptor.handleSSE(req);
 }
-
-// POST /api/mcp-reverse/message
 export async function POST(req: NextRequest) {
   return acceptor.handleMessage(req);
 }
@@ -121,84 +99,36 @@ const transport = new SSEReverseClientTransport({
   reconnect: { enabled: true },
 });
 
-const server = new McpServer({
-  name: 'office-server',
-  version: '1.0.0'
-});
-
-// Add tools, resources, and prompts
-server.tool('greet',
-  'Greet someone',
-  { name: z.string() },
+const server = new McpServer({ name: 'office-server', version: '1.0.0' });
+server.tool('greet', 'Greet someone', { name: z.string() },
   async ({ name }) => ({ content: [{ type: 'text', text: `Hello, ${name}!` }] })
 );
 
 await server.connect(transport);
 ```
 
----
-
-## Quick Start — WebSocket
-
-### Public Side
+### High-Level Client (recommended)
 
 ```typescript
-import { WebSocketAcceptor } from 'mcp-reverse';
-// or: import { WebSocketAcceptor } from 'mcp-reverse/websocket';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { ReverseMCPClient } from 'mcp-reverse/connector';
 
-const acceptor = new WebSocketAcceptor({
-  port: 9090,
-  authTokens: { 'office-server': 'secret123' },
-});
-
-acceptor.onConnection(async ({ transport, metadata }) => {
-  const client = new Client(
-    { name: 'chat-ai', version: '1.0.0' },
-    { capabilities: {} }
-  );
-  await client.connect(transport);
-});
-
-acceptor.onDisconnection((name) => console.log(`Disconnected: ${name}`));
-await acceptor.start();
-```
-
-### Internal Side
-
-```typescript
-import { ReverseClientTransport } from 'mcp-reverse';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-
-const transport = new ReverseClientTransport({
-  url: 'wss://public-chatai.example.com:9090/ws',
+const client = await ReverseMCPClient.createSSE(server, {
+  url: 'https://public-host.example.com:3000/mcp-reverse',
   serverName: 'office-server',
   authToken: 'secret123',
-  reconnect: { enabled: true },
-  heartbeat: { enabled: true },
+  reconnect: { enabled: true, maxDelay: 30000 },
 });
 
-const server = new McpServer({
-  name: 'office-server',
-  version: '1.0.0'
-});
-
-// Add tools, resources, and prompts
-server.tool('greet',
-  'Greet someone',
-  { name: z.string() },
-  async ({ name }) => ({ content: [{ type: 'text', text: `Hello, ${name}!` }] })
-);
-
-await server.connect(transport);
+client.on('connected', () => console.log('Connected'));
+client.on('disconnected', () => console.log('Disconnected'));
+client.on('reconnecting', (attempt) => console.log(`Reconnecting (${attempt})`));
 ```
 
 ---
 
 ## API Reference
 
-### `SSEAcceptor` (Public Side — SSE)
+### `SSEAcceptor` (Public Side)
 
 ```typescript
 new SSEAcceptor(options: SSEAcceptorOptions | SSEAcceptorStandaloneOptions)
@@ -211,27 +141,10 @@ new SSEAcceptor(options: SSEAcceptorOptions | SSEAcceptorStandaloneOptions)
 | `heartbeat` | `SSEHeartbeatOptions` | `{enabled:true}` | Keepalive |
 | `maxMessageSize` | `number` | `4MB` | POST body limit |
 | `sessionTimeout` | `number` | `60000` | Inactivity timeout (ms) |
-| `pathPrefix` | `string` | `'/mcp-reverse'` | URL prefix |
-| `port` | `number` | — | **Standalone only**: listen port |
+| `pathPrefix` | `string` | `/mcp-reverse` | URL prefix |
+| `port` | `number` | — | Standalone only: listen port |
 
-**Framework mode methods** (Next.js / Express):
-
-- `handleSSE(req)` — Returns HTTP response for GET SSE connections
-- `handleMessage(req)` — Returns HTTP response for POST messages
-
-**Standalone mode methods** (when `port` is provided):
-
-- `start()` / `close()` — Lifecycle
-- `isRunning()` — Whether the server is running
-- `getAddress()` — `{ host, port, pathPrefix }`
-
-**Event handlers** (both modes):
-
-- `onConnection(fn)` — New server connected. Receives `{ transport, metadata, sessionId }`
-- `onDisconnection(fn)` — Server disconnected
-- `onError(fn)` — Error occurred
-
-### `SSEReverseClientTransport` (Internal Side — SSE)
+### `SSEReverseClientTransport` (Internal Side)
 
 ```typescript
 new SSEReverseClientTransport(options: SSEReverseClientTransportOptions)
@@ -239,7 +152,7 @@ new SSEReverseClientTransport(options: SSEReverseClientTransportOptions)
 
 | Option | Type | Default | Notes |
 |--------|------|---------|-------|
-| `url` | `string` | required | Base URL (appends `/sse` and `/message`) |
+| `url` | `string` | required | Base URL |
 | `serverName` | `string` | required | Server identifier |
 | `authToken` | `string` | — | Bearer token |
 | `reconnect` | `ReconnectOptions` | `{enabled:true}` | Auto-reconnect |
@@ -248,50 +161,11 @@ new SSEReverseClientTransport(options: SSEReverseClientTransportOptions)
 | `insecureTls` | `boolean` | `false` | Skip TLS verify |
 | `queryParams` | `Record<string, string>` | — | Extra query params |
 
-Properties: `state`, `sessionId`, `reconnectAttempts`
-
-### `WebSocketAcceptor` (Public Side — WebSocket)
-
-```typescript
-new WebSocketAcceptor(options: WebSocketAcceptorOptions)
-```
-
-| Option | Type | Default | Notes |
-|--------|------|---------|-------|
-| `port` | `number` | required | Listening port |
-| `host` | `string` | `'0.0.0.0'` | Bind address |
-| `path` | `string` | `'/ws'` | Upgrade path |
-| `authTokens` | `Record<string, string>` | — | `serverName → token` map |
-| `authHandler` | `async (meta) => boolean` | — | Custom auth |
-| `heartbeat` | `HeartbeatOptions` | `{enabled:false}` | Ping/Pong |
-| `tls` | `{cert, key}` | — | WSS cert/key files |
-| `maxMessageSize` | `number` | `4MB` | Message limit |
-
-Methods: `start()`, `close()`, `onConnection(fn)`, `onDisconnection(fn)`, `onError(fn)`, `getAddress()`
-
-### `ReverseClientTransport` (Internal Side — WebSocket)
-
-```typescript
-new ReverseClientTransport(options: ReverseClientTransportOptions)
-```
-
-| Option | Type | Default | Notes |
-|--------|------|---------|-------|
-| `url` | `string` | required | WebSocket URL |
-| `serverName` | `string` | required | Server identifier |
-| `authToken` | `string` | — | Bearer token |
-| `reconnect` | `ReconnectOptions` | `{enabled:false}` | Auto-reconnect |
-| `heartbeat` | `HeartbeatOptions` | `{enabled:false}` | Ping/Pong |
-| `headers` | `Record<string, string>` | — | Extra headers |
-| `insecureTls` | `boolean` | `false` | Skip TLS verify |
-
-Properties: `state`, `sessionId`, `reconnectAttempts`
-
 ### Reconnect Options
 
 ```typescript
 {
-  enabled?: boolean;       // WebSocket: default false, SSE: default true
+  enabled?: boolean;       // default: true
   initialDelay?: number;   // default: 1000ms
   maxDelay?: number;       // default: 30000ms
   multiplier?: number;     // default: 2
@@ -302,64 +176,45 @@ Properties: `state`, `sessionId`, `reconnectAttempts`
 
 ---
 
-## All MCP Features — Confirmed Working
-
-| MCP Feature | WebSocket | SSE |
-|-------------|:---:|:---:|
-| `tools/list` | ✅ | ✅ |
-| `tools/call` | ✅ | ✅ |
-| `notifications/tools/list_changed` | ✅ | ✅ |
-| `resources/list` | ✅ | ✅ |
-| `resources/read` | ✅ | ✅ |
-| `resources/subscribe` | ✅ | ✅ |
-| `notifications/resources/list_changed` | ✅ | ✅ |
-| `notifications/resources/updated` | ✅ | ✅ |
-| `prompts/list` | ✅ | ✅ |
-| `prompts/get` | ✅ | ✅ |
-| `notifications/prompts/list_changed` | ✅ | ✅ |
-| `roots/list` | ✅ | ✅ |
-| `sampling/createMessage` | ✅ | ✅ |
-| `logging` | ✅ | ✅ |
-| `ping` | ✅ | ✅ |
-| **Instructions** | ✅ | ✅ |
-
-> **Key insight:** The Transport is a transparent JSON-RPC pipe. Any message that flows through `transport.send()` / `transport.onmessage` works automatically.
-
----
-
 ## Project Structure
 
 ```
 src/
-├── common/                  # Shared utilities
+├── protocol/                # Protocol-level abstractions
 │   ├── types.ts             # All type definitions
-│   ├── heartbeat.ts         # WebSocket Ping/Pong heartbeat
 │   └── reconnect.ts         # Exponential backoff reconnection
-├── websocket/               # WebSocket engine
-│   ├── acceptor.ts          # WebSocketAcceptor (public side)
-│   ├── reverse-client.ts    # ReverseClientTransport (internal side)
-│   └── transport.ts         # SingleConnectionTransport wrapper
-├── sse/                     # SSE engine
-│   ├── acceptor.ts          # SSEAcceptor (public side)
-│   ├── reverse-client.ts    # SSEReverseClientTransport (internal side)
-│   ├── connection-transport.ts  # SSEConnectionTransport wrapper
-│   └── util.ts              # SSE parsing/formatting utilities
-├── client/                  # (deprecated) Re-exports from websocket/
-├── server/                  # (deprecated) Re-exports from websocket/
-└── index.ts                 # Main entry point — exports all engines
+├── acceptor/
+│   └── sse-acceptor.ts      # SSEAcceptor (public side)
+├── connector/
+│   ├── mcp-connector.ts     # ReverseMCPClient (high-level)
+│   └── sse-connector.ts     # SSEReverseClientTransport (internal side)
+├── transport/
+│   ├── sse-transport.ts     # SSEConnectionTransport
+│   └── sse-util.ts          # SSE parsing/formatting utilities
+├── proxy/
+│   └── reverse-proxy.ts     # ReverseProxy / gateway
+└── index.ts                 # Main entry point
 ```
+
+### Sub-path exports
+
+| Export path | Description |
+|-------------|-------------|
+| `mcp-reverse` | Main entry — all types |
+| `mcp-reverse/connector` | High-level `ReverseMCPClient` |
+| `mcp-reverse/acceptor` | `SSEAcceptor` |
+| `mcp-reverse/sse` | Backward compat — all SSE types |
+| `mcp-reverse/transport` | `SSEConnectionTransport`, SSE utilities |
+| `mcp-reverse/proxy` | `ReverseProxy` |
+
+---
 
 ## Testing
 
 ```bash
-npm test                   # All 66 tests (unit + integration)
+npm test                   # All 43 tests (unit + integration)
 npm run build              # TypeScript compilation
 ```
-
-## Credits
-
-- [CleverChatty](https://github.com/Gelembjuk/cleverchatty) — first `reverse-websocket` MCP implementation (Go)
-- [Supergateway](https://github.com/supercorp-ai/supergateway) — MCP WS transport bridge
 
 ## License
 

@@ -8,7 +8,7 @@ import {
   formatSSEComment,
   formatSSEPing,
   SSEParser,
-} from '../../src/sse/util.js';
+} from '../../src/transport/sse-util.js';
 
 describe('SSE Utilities', () => {
   describe('formatSSEEvent', () => {

@@ -2,7 +2,7 @@
  * ReverseMCPClient
  *
  * High-level client for connecting an MCP Server to a public MCP Client
- * via reverse SSE or WebSocket transport.
+ * via reverse SSE transport.
  *
  * Responsibilities:
  *  - Transport lifecycle management (create, start, monitor, destroy)
@@ -17,9 +17,9 @@
 
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ReconnectOptions, Logger } from '../common/types.js';
-import { ConnectionState, noopLogger } from '../common/types.js';
-import { ReconnectionManager } from '../common/reconnect.js';
+import type { ReconnectOptions, Logger } from '../protocol/types.js';
+import { ConnectionState, noopLogger } from '../protocol/types.js';
+import { ReconnectionManager } from '../protocol/reconnect.js';
 
 // ─── Options ────────────────────────────────────────────────────────
 
@@ -39,11 +39,6 @@ export interface ReverseMCPClientSSEOptions {
   insecureTls?: boolean;
 }
 
-/** Options when using WebSocket transport */
-export interface ReverseMCPClientWSOptions extends ReverseMCPClientSSEOptions {
-  /** Additional query params */
-  queryParams?: Record<string, string>;
-}
 
 // ─── Event Types ────────────────────────────────────────────────────
 
@@ -80,7 +75,7 @@ export class ReverseMCPClient {
     options: ReverseMCPClientSSEOptions,
     logger?: Logger,
   ): Promise<ReverseMCPClient> {
-    const { SSEReverseClientTransport } = await import('../sse/reverse-client.js');
+    const { SSEReverseClientTransport } = await import('./sse-connector.js');
     const factory: TransportFactory = (log) =>
       new SSEReverseClientTransport(
         {
@@ -94,30 +89,6 @@ export class ReverseMCPClient {
         log,
       );
     return new ReverseMCPClient(server, factory, options.reconnect, logger);
-  }
-
-  /**
-   * Create a ReverseMCPClient with WebSocket transport.
-   */
-  static async createWS(
-    server: McpServer,
-    options: ReverseMCPClientWSOptions,
-    logger?: Logger,
-  ): Promise<ReverseMCPClient> {
-    const { ReverseClientTransport } = await import('../websocket/reverse-client.js');
-    const factory: TransportFactory = (log) =>
-      new ReverseClientTransport(
-        {
-          url: options.url,
-          serverName: options.serverName,
-          authToken: options.authToken,
-          reconnect: { enabled: false }, // managed by us
-          headers: options.headers,
-          insecureTls: options.insecureTls,
-          queryParams: options.queryParams,
-        },
-        log,
-      );
     return new ReverseMCPClient(server, factory, options.reconnect, logger);
   }
 

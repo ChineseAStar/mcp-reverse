@@ -36,15 +36,6 @@ export interface ReconnectOptions {
 
 // ─── Heartbeat ───────────────────────────────────────────────────────
 
-/** Heartbeat (ping/pong) options — WebSocket */
-export interface HeartbeatOptions {
-  /** Enable heartbeat (default: true) */
-  enabled?: boolean;
-  /** Ping interval in milliseconds (default: 30000) */
-  pingInterval?: number;
-  /** Pong timeout in milliseconds (default: 10000) */
-  pongTimeout?: number;
-}
 
 /** SSE keepalive options */
 export interface SSEHeartbeatOptions {
@@ -54,56 +45,6 @@ export interface SSEHeartbeatOptions {
   pingInterval?: number;
   /** Timeout waiting for next event before declaring dead (default: 45000) */
   readTimeout?: number;
-}
-
-// ─── WebSocket Acceptor ──────────────────────────────────────────────
-
-/** Options for the WebSocketAcceptor (public MCP Client side) */
-export interface WebSocketAcceptorOptions {
-  /** Port to listen on */
-  port: number;
-  /** Host to bind to (default: '0.0.0.0') */
-  host?: string;
-  /** Path for WebSocket upgrade (default: '/ws') */
-  path?: string;
-  /** Optional TLS configuration */
-  tls?: {
-    cert: string;  // Path to cert file
-    key: string;   // Path to key file
-    minVersion?: 'TLSv1.2' | 'TLSv1.3';
-  };
-  /** Expected auth tokens (keyed by server name), empty = no auth */
-  authTokens?: Record<string, string>;
-  /** Validate connection metadata via callback */
-  authHandler?: (metadata: ConnectionMetadata) => Promise<boolean>;
-  /** Heartbeat configuration */
-  heartbeat?: HeartbeatOptions;
-  /** Maximum message size in bytes (default: 4MB) */
-  maxMessageSize?: number;
-  /** Timeout for the initial MCP handshake in ms (default: 30000) */
-  handshakeTimeout?: number;
-}
-
-// ─── WebSocket Reverse Client ────────────────────────────────────────
-
-/** Options for the WebSocket ReverseClientTransport (internal MCP Server side) */
-export interface ReverseClientTransportOptions {
-  /** WebSocket URL to connect to (e.g. 'wss://public-chatai.example.com:9090/ws') */
-  url: string;
-  /** Server name for identification */
-  serverName: string;
-  /** Authentication token */
-  authToken?: string;
-  /** Reconnection options */
-  reconnect?: ReconnectOptions;
-  /** Heartbeat options */
-  heartbeat?: HeartbeatOptions;
-  /** Additional headers to send */
-  headers?: Record<string, string>;
-  /** Whether to skip TLS certificate verification (default: false) */
-  insecureTls?: boolean;
-  /** Additional query parameters */
-  queryParams?: Record<string, string>;
 }
 
 // ─── SSE Acceptor ────────────────────────────────────────────────────
@@ -172,8 +113,6 @@ export interface SSEReverseClientTransportOptions {
 
 // ─── Event Types ─────────────────────────────────────────────────────
 
-/** Event types for WebSocketAcceptor */
-export type WebSocketAcceptorEvent = 'connection' | 'disconnection' | 'error' | 'listening' | 'close';
 
 /** Event types for SSEAcceptor */
 export type SSEAcceptorEvent = 'connection' | 'disconnection' | 'error';
