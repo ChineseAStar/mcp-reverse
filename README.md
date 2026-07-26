@@ -37,7 +37,7 @@ Public Client (chat-ai) <───incoming──── Internal Server (behind N
 npm install mcp-reverse
 ```
 
-Requires `@modelcontextprotocol/sdk` as peer dependency.
+Requires Node.js 20+ and `@modelcontextprotocol/sdk` 1.10.0+ as a peer dependency.
 
 ---
 
@@ -67,7 +67,9 @@ acceptor.onConnection(async ({ transport, metadata }) => {
   const result = await client.callTool({ name: 'exec', arguments: { cmd: 'ls' } });
 });
 
-acceptor.onDisconnection((serverName) => console.log(`Disconnected: ${serverName}`));
+acceptor.onDisconnection((serverName, sessionId) => {
+  console.log(`Disconnected: ${serverName} (${sessionId})`);
+});
 
 // ─── Next.js App Router integration ───
 export async function GET(req: NextRequest) {
@@ -96,8 +98,11 @@ const transport = new SSEReverseClientTransport({
   url: 'https://public-chatai.example.com:3000/mcp-reverse',
   serverName: 'office-server',
   authToken: 'secret123',
-  reconnect: { enabled: true },
+  connectTimeout: 15000,
 });
+
+// This low-level transport performs one connection only. For automatic
+// reconnection, use ReverseMCPClient below.
 
 const server = new McpServer({ name: 'office-server', version: '1.0.0' });
 server.tool('greet', 'Greet someone', { name: z.string() },
@@ -116,12 +121,15 @@ const client = await ReverseMCPClient.createSSE(server, {
   url: 'https://public-host.example.com:3000/mcp-reverse',
   serverName: 'office-server',
   authToken: 'secret123',
+  connectTimeout: 15000,
   reconnect: { enabled: true, maxDelay: 30000 },
 });
 
 client.on('connected', () => console.log('Connected'));
 client.on('disconnected', () => console.log('Disconnected'));
 client.on('reconnecting', (attempt) => console.log(`Reconnecting (${attempt})`));
+
+await client.start();
 ```
 
 ---
@@ -155,10 +163,11 @@ new SSEReverseClientTransport(options: SSEReverseClientTransportOptions)
 | `url` | `string` | required | Base URL |
 | `serverName` | `string` | required | Server identifier |
 | `authToken` | `string` | — | Bearer token |
-| `reconnect` | `ReconnectOptions` | `{enabled:true}` | Auto-reconnect |
+| `reconnect` | `ReconnectOptions` | — | Deprecated on the low-level transport; use `ReverseMCPClient` |
 | `heartbeat` | `SSEHeartbeatOptions` | `{enabled:true}` | Keepalive |
-| `headers` | `Record<string, string>` | — | Extra headers |
-| `insecureTls` | `boolean` | `false` | Skip TLS verify |
+| `headers` | `Record<string, string>` | — | Extra headers for GET and POST |
+| `insecureTls` | `boolean` | — | Reserved for compatibility; not supported by the built-in fetch transport |
+| `connectTimeout` | `number` | `15000` | SSE connection timeout in ms (`0` disables) |
 | `queryParams` | `Record<string, string>` | — | Extra query params |
 
 ### Reconnect Options
@@ -212,7 +221,7 @@ src/
 ## Testing
 
 ```bash
-npm test                   # All 43 tests (unit + integration)
+npm test                   # All 61 tests (unit + integration)
 npm run build              # TypeScript compilation
 ```
 

@@ -53,7 +53,8 @@ export interface AcceptorConnection {
 }
 
 export type ConnectionHandler = (connection: AcceptorConnection) => void | Promise<void>;
-export type DisconnectionHandler = (serverName: string) => void | Promise<void>;
+/** Receives both the logical server name and the exact session that closed. */
+export type DisconnectionHandler = (serverName: string, sessionId?: string) => void | Promise<void>;
 export type ErrorHandler = (error: Error) => void | Promise<void>;
 
 interface SSESession {
@@ -63,6 +64,8 @@ interface SSESession {
   transport: SSEConnectionTransport;
   /** Controller for the SSE write stream */
   controller: ReadableStreamDefaultController<Uint8Array> | null;
+  /** Closes the underlying Node.js SSE response in standalone mode. */
+  closeStream?: () => void;
   /** Resolved when session is fully initialized */
   readyPromise: Promise<void>;
   readyResolve: () => void;
@@ -181,12 +184,15 @@ export class SSEAcceptor {
     this.sessions.clear();
 
     if (this.httpServer) {
+      const server = this.httpServer;
       return new Promise((resolve) => {
-        this.httpServer!.close(() => {
+        server.close(() => {
           this._started = false;
           this.logger.info('SSEAcceptor standalone server closed');
           resolve();
         });
+        // Shutdown must not wait indefinitely for a stalled POST body.
+        server.closeAllConnections?.();
       });
     }
     this._started = false;
@@ -341,23 +347,54 @@ export class SSEAcceptor {
 
       // Check auth for this session
       const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-      if (this.options.authTokens?.[session.serverName]) {
-        const expected = this.options.authTokens[session.serverName];
-        if (token !== expected) {
-          return new Response('Unauthorized', { status: 401 });
-        }
+      if (!this.isConfiguredTokenValid(session.serverName, token)) {
+        return new Response('Unauthorized', { status: 401 });
       }
 
-      // Check content length
+      // Reject a declared oversized body before reading, then enforce the
+      // actual byte limit while streaming so a forged/missing Content-Length
+      // cannot force the full payload into memory.
       const contentLength = parseInt(req.headers.get('content-length') ?? '0', 10);
       if (contentLength > this.options.maxMessageSize) {
         return new Response('Payload too large', { status: 413 });
       }
 
-      const body = await req.text();
-      session.lastActivity = Date.now();
+      this.touchSession(session);
+      const chunks: Buffer[] = [];
+      let totalLength = 0;
+      const reader = req.body?.getReader();
 
-      // Route the message into the transport
+      if (reader) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            if (this.sessions.get(sessionId) !== session) {
+              try { await reader.cancel(); } catch { /* already closed */ }
+              return new Response('Session not found', { status: 404 });
+            }
+
+            totalLength += value.byteLength;
+            if (totalLength > this.options.maxMessageSize) {
+              try { await reader.cancel(); } catch { /* already closed */ }
+              return new Response('Payload too large', { status: 413 });
+            }
+
+            chunks.push(Buffer.from(value));
+            this.touchSession(session);
+          }
+        } finally {
+          try { reader.releaseLock(); } catch { /* already released */ }
+        }
+      }
+
+      if (this.sessions.get(sessionId) !== session) {
+        return new Response('Session not found', { status: 404 });
+      }
+
+      const body = Buffer.concat(chunks, totalLength).toString();
+      this.touchSession(session);
       session.transport.feedMessage(body);
 
       return new Response(null, { status: 202 });
@@ -394,6 +431,11 @@ export class SSEAcceptor {
     // Monkey-patch res.write to intercept SSE writes
     // We'll use a wrapper so Transport.send() can write to the stream
     session.controller = null; // No ReadableStream in Node.js mode
+    session.closeStream = () => {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    };
     session.transport.setWriteCallback((data: string) => {
       if (!res.writableEnded) {
         res.write(data);
@@ -429,30 +471,60 @@ export class SSEAcceptor {
       // Auth check
       const authHeader = getHeader(req.headers, 'authorization') ?? '';
       const token = authHeader.replace(/^Bearer\s+/i, '');
-      if (this.options.authTokens?.[session.serverName]) {
-        const expected = this.options.authTokens[session.serverName];
-        if (token !== expected) {
-          res.writeHead(401, { 'Content-Type': 'text/plain' });
-          res.end('Unauthorized');
-          return;
-        }
+      if (!this.isConfiguredTokenValid(session.serverName, token)) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('Unauthorized');
+        return;
       }
 
-      // Read body
+      // Each received chunk refreshes the inactivity deadline. A genuinely
+      // active slow upload stays alive, while a stalled upload expires.
+      this.touchSession(session);
+
       const chunks: Buffer[] = [];
       let totalLength = 0;
+      let requestFinished = false;
       req.on('data', (chunk: Buffer) => {
-        totalLength += chunk.length;
-        if (totalLength > this.options.maxMessageSize) {
-          req.destroy(new Error('Payload too large'));
+        if (requestFinished) return;
+
+        if (this.sessions.get(sessionId) !== session) {
+          requestFinished = true;
+          if (!res.headersSent) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Session not found');
+          }
           return;
         }
+
+        totalLength += chunk.length;
+        if (totalLength > this.options.maxMessageSize) {
+          requestFinished = true;
+          chunks.length = 0;
+          if (!res.headersSent) {
+            res.writeHead(413, { 'Content-Type': 'text/plain' });
+            res.end('Payload too large');
+          }
+          return;
+        }
+
         chunks.push(chunk);
+        this.touchSession(session);
       });
 
       req.on('end', () => {
+        if (requestFinished) return;
+        requestFinished = true;
+
+        if (this.sessions.get(sessionId) !== session) {
+          if (!res.headersSent) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Session not found');
+          }
+          return;
+        }
+
         const body = Buffer.concat(chunks).toString();
-        session.lastActivity = Date.now();
+        this.touchSession(session);
         session.transport.feedMessage(body);
 
         res.writeHead(202);
@@ -460,7 +532,12 @@ export class SSEAcceptor {
       });
 
       req.on('error', (err: Error) => {
+        if (requestFinished) return;
+        requestFinished = true;
         this.logger.error(`Message handler read error: ${err.message}`);
+        if (this.sessions.get(sessionId) === session) {
+          this.touchSession(session);
+        }
         if (!res.headersSent) {
           res.writeHead(500);
         }
@@ -518,6 +595,7 @@ export class SSEAcceptor {
       metadata,
       transport,
       controller: null,
+      closeStream: undefined,
       readyPromise,
       readyResolve,
       lastActivity: Date.now(),
@@ -558,11 +636,18 @@ export class SSEAcceptor {
     if (session.controller) {
       try { session.controller.close(); } catch { /* already closed */ }
     }
+    if (session.closeStream) {
+      try { session.closeStream(); } catch { /* already closed */ }
+      session.closeStream = undefined;
+    }
 
-    // Emit disconnection
+    // Emit disconnection with the exact session identity. Promise rejections
+    // are observed so async handlers cannot become unhandled rejections.
     for (const handler of this.disconnectionHandlers) {
       try {
-        handler(session.serverName);
+        void Promise.resolve(handler(session.serverName, session.sessionId)).catch((err: unknown) => {
+          this.logger.error(`Disconnection handler error: ${(err as Error).message}`);
+        });
       } catch (err) {
         this.logger.error(`Disconnection handler error: ${(err as Error).message}`);
       }
@@ -591,16 +676,42 @@ export class SSEAcceptor {
     // Node.js mode: write happens via the transport's write callback
   }
 
-  private resetSessionTimeout(session: SSESession): void {
+  private touchSession(session: SSESession): void {
+    if (this.sessions.get(session.sessionId) !== session) return;
+    session.lastActivity = Date.now();
+    this.resetSessionTimeout(session);
+  }
+
+  private clearSessionTimeout(session: SSESession): void {
     if (session.timeoutTimer) {
       clearTimeout(session.timeoutTimer);
+      session.timeoutTimer = undefined;
     }
-    session.timeoutTimer = setTimeout(() => {
+  }
+
+  private resetSessionTimeout(session: SSESession): void {
+    this.clearSessionTimeout(session);
+
+    const checkTimeout = () => {
+      session.timeoutTimer = undefined;
+      if (this.sessions.get(session.sessionId) !== session) return;
+
+      const idleFor = Date.now() - session.lastActivity;
+      if (idleFor < this.options.sessionTimeout) {
+        session.timeoutTimer = setTimeout(
+          checkTimeout,
+          Math.max(1, this.options.sessionTimeout - idleFor),
+        );
+        return;
+      }
+
       this.logger.warn(
         `SSE session timeout for ${session.serverName} (${session.sessionId}) — no activity for ${this.options.sessionTimeout}ms`,
       );
       this.destroySession(session);
-    }, this.options.sessionTimeout);
+    };
+
+    session.timeoutTimer = setTimeout(checkTimeout, this.options.sessionTimeout);
   }
 
   // ─── Internal: Keepalive ────────────────────────────────────────
@@ -648,6 +759,14 @@ export class SSEAcceptor {
 
   // ─── Internal: Auth ─────────────────────────────────────────────
 
+  private isConfiguredTokenValid(serverName: string, token: string): boolean {
+    const authTokens = this.options.authTokens;
+    if (!authTokens || Object.keys(authTokens).length === 0) return true;
+
+    return Object.prototype.hasOwnProperty.call(authTokens, serverName)
+      && token === authTokens[serverName];
+  }
+
   private async authenticate(
     headers: Record<string, string | string[] | undefined> | Headers,
   ): Promise<ConnectionMetadata | null> {
@@ -660,13 +779,11 @@ export class SSEAcceptor {
     const authHeader = this.resolveHeader(headers, 'authorization') ?? '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    // Token validation
-    if (this.options.authTokens) {
-      const expected = this.options.authTokens[serverName];
-      if (expected && token !== expected) {
-        this.logger.warn(`Connection rejected: invalid token for '${serverName}'`);
-        return null;
-      }
+    // Token validation. A non-empty token map is an allow-list: unknown
+    // server names must not bypass authentication by selecting another name.
+    if (!this.isConfiguredTokenValid(serverName, token)) {
+      this.logger.warn(`Connection rejected: invalid token for '${serverName}'`);
+      return null;
     }
 
     const metadata: ConnectionMetadata = {
@@ -740,7 +857,9 @@ export class SSEAcceptor {
 
     for (const handler of this.connectionHandlers) {
       try {
-        handler(connection);
+        void Promise.resolve(handler(connection)).catch((err: unknown) => {
+          this.logger.error(`Connection handler error: ${(err as Error).message}`);
+        });
       } catch (err) {
         this.logger.error(`Connection handler error: ${(err as Error).message}`);
       }

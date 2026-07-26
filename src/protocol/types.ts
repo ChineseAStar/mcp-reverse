@@ -99,14 +99,16 @@ export interface SSEReverseClientTransportOptions {
   serverName: string;
   /** Authentication token */
   authToken?: string;
-  /** Reconnection options */
+  /** @deprecated Low-level transports do not reconnect; use ReverseMCPClient instead. */
   reconnect?: ReconnectOptions;
   /** SSE keepalive options */
   heartbeat?: SSEHeartbeatOptions;
   /** Additional headers to send with every request */
   headers?: Record<string, string>;
-  /** Whether to skip TLS certificate verification (default: false) */
+  /** @deprecated Reserved for compatibility; the built-in fetch transport does not bypass TLS verification. */
   insecureTls?: boolean;
+  /** Timeout for establishing the SSE connection in ms (default: 15000, 0 = disabled) */
+  connectTimeout?: number;
   /** Additional query parameters added to the SSE GET URL */
   queryParams?: Record<string, string>;
 }

@@ -1,6 +1,6 @@
 {
   "name": "mcp-reverse",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Reverse transports for MCP (Model Context Protocol) — SSE engine. Allows internal MCP servers behind NAT/firewall to connect out to public MCP clients.",
   "license": "MIT",
   "repository": {
@@ -30,32 +30,32 @@
   },
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./connector": {
-      "import": "./dist/connector/index.js",
-      "types": "./dist/connector/index.d.ts"
+      "types": "./dist/connector/index.d.ts",
+      "import": "./dist/connector/index.js"
     },
     "./client": {
-      "import": "./dist/connector/index.js",
-      "types": "./dist/connector/index.d.ts"
+      "types": "./dist/connector/index.d.ts",
+      "import": "./dist/connector/index.js"
     },
     "./acceptor": {
-      "import": "./dist/acceptor/index.js",
-      "types": "./dist/acceptor/index.d.ts"
+      "types": "./dist/acceptor/index.d.ts",
+      "import": "./dist/acceptor/index.js"
     },
     "./sse": {
-      "import": "./dist/sse/index.js",
-      "types": "./dist/sse/index.d.ts"
+      "types": "./dist/sse/index.d.ts",
+      "import": "./dist/sse/index.js"
     },
     "./transport": {
-      "import": "./dist/transport/index.js",
-      "types": "./dist/transport/index.d.ts"
+      "types": "./dist/transport/index.d.ts",
+      "import": "./dist/transport/index.js"
     },
     "./proxy": {
-      "import": "./dist/proxy/index.js",
-      "types": "./dist/proxy/index.d.ts"
+      "types": "./dist/proxy/index.d.ts",
+      "import": "./dist/proxy/index.js"
     }
   },
   "files": [
@@ -70,16 +70,21 @@
     "test:watch": "node --test --watch --import tsx tests/**/*.test.ts",
     "test:e2e": "node --test --import tsx tests/integration/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run clean && npm run build && npm test"
+    "prepublishOnly": "npm test",
+    "prepack": "npm run clean && npm run build"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@types/node": ">=18"
+  },
   "peerDependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.10.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@types/node": "^22.15.18",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

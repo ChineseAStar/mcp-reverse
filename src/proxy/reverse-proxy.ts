@@ -51,6 +51,7 @@ export class ReverseProxy {
   private httpTransport: StreamableHTTPServerTransport;
   private sseAcceptor: SSEAcceptor;
   private reverseTransport: SSEConnectionTransport | null = null;
+  private reverseSessionId: string | null = null;
 
   constructor(config: ProxyConfig, logger?: Logger) {
     this.logger = logger ?? noopLogger;
@@ -87,22 +88,44 @@ export class ReverseProxy {
 
     // When internal server connects
     this.sseAcceptor.onConnection((conn) => {
+      const previousTransport = this.reverseTransport;
+      const previousSessionId = this.reverseSessionId;
+
       this.reverseTransport = conn.transport;
+      this.reverseSessionId = conn.sessionId;
       this.logger.info(
         `Internal server '${conn.metadata.serverName}' connected (session: ${conn.sessionId})`,
       );
 
-      // Bridge: Internal Server → MCP Client
+      // Bridge: Internal Server → MCP Client. Ignore messages from a stale
+      // session that was superseded by a newer connection with the same name.
       conn.transport.onmessage = (msg: JSONRPCMessage) => {
+        if (this.reverseSessionId !== conn.sessionId) return;
         this.httpTransport.send(msg).catch((err: Error) => {
           this.logger.error(`Failed to send to MCP client: ${err.message}`);
         });
       };
+
+      // Retire the previous same-name session after the new one is selected.
+      // Its disconnection callback is session-aware and cannot clear the new
+      // transport.
+      if (previousTransport && previousSessionId !== conn.sessionId) {
+        void previousTransport.close().catch((err: Error) => {
+          this.logger.error(`Failed to close superseded reverse session: ${err.message}`);
+        });
+      }
     });
 
-    // When internal server disconnects
-    this.sseAcceptor.onDisconnection((serverName: string) => {
+    // When internal server disconnects, only clear the exact active session.
+    this.sseAcceptor.onDisconnection((serverName: string, sessionId?: string) => {
+      if (sessionId && sessionId !== this.reverseSessionId) {
+        this.logger.debug(
+          `Ignoring stale disconnect for '${serverName}' (session: ${sessionId})`,
+        );
+        return;
+      }
       this.reverseTransport = null;
+      this.reverseSessionId = null;
       this.logger.info(`Internal server '${serverName}' disconnected`);
     });
   }
