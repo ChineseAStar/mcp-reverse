@@ -33,7 +33,10 @@ describe('SSEAcceptor session lifecycle', () => {
     const port = await freePort();
     const serverName = 'timeout-reset-test';
     const token = 'token';
-    const timeout = 120;
+    // Real HTTP scheduling needs headroom on loaded CI runners; the two activity
+    // intervals still cross the original deadline without crossing the renewed one.
+    const timeout = 1000;
+    const activityInterval = 600;
     const disconnected: Array<{ serverName: string; sessionId: string }> = [];
 
     const acceptor = new SSEAcceptor({
@@ -64,7 +67,7 @@ describe('SSEAcceptor session lifecycle', () => {
       assert.ok(sessionId);
       assert.strictEqual(acceptor.sessionCount, 1);
 
-      await new Promise((resolve) => setTimeout(resolve, 75));
+      await new Promise((resolve) => setTimeout(resolve, activityInterval));
       const postResponse = await fetch(
         `http://127.0.0.1:${port}/mcp-reverse/message?sessionId=${encodeURIComponent(sessionId)}`,
         {
@@ -80,10 +83,10 @@ describe('SSEAcceptor session lifecycle', () => {
 
       // The original creation-based timer would have expired by now. The
       // session must remain alive until timeout milliseconds after the POST.
-      await new Promise((resolve) => setTimeout(resolve, 75));
+      await new Promise((resolve) => setTimeout(resolve, activityInterval));
       assert.strictEqual(acceptor.sessionCount, 1);
 
-      await waitFor(() => acceptor.sessionCount === 0, 500);
+      await waitFor(() => acceptor.sessionCount === 0, timeout * 2);
       assert.deepStrictEqual(disconnected, [{ serverName, sessionId }]);
     } finally {
       abort.abort();
