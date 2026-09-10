@@ -96,7 +96,8 @@ describe('ReconnectionManager', () => {
 
     assert.strictEqual(calls, 3);
     assert.strictEqual(maxActive, 1);
-    assert.strictEqual(r.getAttempts(), 0);
+    // A newly initialized connection has not yet earned a reset of the failure cycle.
+    assert.strictEqual(r.getAttempts(), 3);
     r.close();
   });
 
@@ -162,7 +163,7 @@ describe('ReconnectionManager', () => {
     await assert.rejects(r.start(), /permanently closed/);
   });
 
-  it('reset counter on connect', async () => {
+  it('accepts an explicit connection notification before the first scheduled attempt', async () => {
     const r = new ReconnectionManager();
     r.setReconnectHandler(async () => {});
     await r.start();

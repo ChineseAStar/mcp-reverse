@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { createServer } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEAcceptor } from '../../src/acceptor/sse-acceptor.js';
 import { ReverseMCPClient } from '../../src/connector/mcp-connector.js';
 
@@ -42,6 +43,9 @@ describe('ReverseMCPClient reconnection', () => {
       heartbeat: { enabled: false },
       sessionTimeout: 5000,
     });
+    const initialize = ({ transport }: { transport: import('@modelcontextprotocol/sdk/shared/transport.js').Transport }) =>
+      new Client({ name: 'restart-gateway', version: '1.0.0' }).connect(transport);
+    acceptor.onConnection(initialize);
     await acceptor.start();
 
     const mcpServer = new McpServer({ name: serverName, version: '1.0.0' });
@@ -88,6 +92,7 @@ describe('ReverseMCPClient reconnection', () => {
         heartbeat: { enabled: false },
         sessionTimeout: 5000,
       });
+      acceptor.onConnection(initialize);
       await acceptor.start();
 
       await waitFor(() => acceptor.sessionCount === 1 && connected === 2);

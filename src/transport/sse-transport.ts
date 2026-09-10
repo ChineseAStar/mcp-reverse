@@ -25,7 +25,7 @@ export class SSEConnectionTransport implements Transport {
   private _sessionId: string;
   private logger: Logger;
   private _closed: boolean = false;
-  private _writeCallback?: (data: string) => void;
+  private _writeCallback?: (data: string) => void | Promise<void>;
   private _messageEventId: number = 0;
 
   onclose?: () => void;
@@ -42,7 +42,7 @@ export class SSEConnectionTransport implements Transport {
   }
 
   /** Set the callback used for writing raw SSE data to the stream */
-  setWriteCallback(cb: (data: string) => void): void {
+  setWriteCallback(cb: (data: string) => void | Promise<void>): void {
     this._writeCallback = cb;
   }
 
@@ -72,7 +72,7 @@ export class SSEConnectionTransport implements Transport {
     this.logger.debug(`SSE send → ${this.reverseSessionId}: ${payload.slice(0, 200)}`);
 
     if (this._writeCallback) {
-      this._writeCallback(sseText);
+      await this._writeCallback(sseText);
     } else {
       throw new Error('No write callback — SSE stream not yet established');
     }

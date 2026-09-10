@@ -310,7 +310,12 @@ export class SSEAcceptor {
 
         // Wire up the transport write path to the SSE stream
         session.transport.setWriteCallback((data) => {
-          try { controller.enqueue(encoder.encode(data)); } catch { /* stream closed */ }
+          try {
+            controller.enqueue(encoder.encode(data));
+          } catch (error) {
+            this.destroySession(session);
+            throw error;
+          }
         });
 
         this.emitConnection(session);
@@ -424,30 +429,23 @@ export class SSEAcceptor {
       'X-Session-Id': session.sessionId,
     });
 
-    // Write initial comment
-    res.write(`: connected ${session.sessionId}\n\n`);
-    session.readyResolve();
-
-    // Monkey-patch res.write to intercept SSE writes
-    // We'll use a wrapper so Transport.send() can write to the stream
+    // Wire lifecycle cleanup before the first stream write, including the opening comment.
     session.controller = null; // No ReadableStream in Node.js mode
     session.closeStream = () => {
       if (!res.writableEnded) {
         res.end();
       }
     };
-    session.transport.setWriteCallback((data: string) => {
-      if (!res.writableEnded) {
-        res.write(data);
-      }
-    });
+    res.on('error', () => this.destroySession(session));
+    res.on('close', () => this.destroySession(session));
+    session.transport.setWriteCallback((data: string) => this.writeNodeStream(session, res, data));
+    req.on('close', () => this.destroySession(session));
 
+    await this.writeNodeStream(session, res, `: connected ${session.sessionId}\n\n`);
+    if (this.sessions.get(session.sessionId) !== session) return;
+    session.readyResolve();
     this.emitConnection(session);
     this.startKeepaliveNode(session, res);
-
-    req.on('close', () => {
-      this.destroySession(session);
-    });
   }
 
   private async handleMessageNodeRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -671,7 +669,12 @@ export class SSEAcceptor {
     if (session.controller) {
       // Next.js ReadableStream mode
       const encoder = new TextEncoder();
-      session.controller.enqueue(encoder.encode(sseText));
+      try {
+        session.controller.enqueue(encoder.encode(sseText));
+      } catch (error) {
+        this.destroySession(session);
+        throw error;
+      }
     }
     // Node.js mode: write happens via the transport's write callback
   }
@@ -717,6 +720,7 @@ export class SSEAcceptor {
   // ─── Internal: Keepalive ────────────────────────────────────────
 
   private startKeepalive(session: SSESession): void {
+    if (!this.sessions.has(session.sessionId)) return;
     const hb = this.options.heartbeat;
     if (hb?.enabled === false) return;
 
@@ -731,7 +735,7 @@ export class SSEAcceptor {
         try {
           session.controller.enqueue(encoder.encode(formatSSEPing()));
         } catch {
-          clearInterval(timer);
+          this.destroySession(session);
         }
       }
     }, interval);
@@ -740,17 +744,39 @@ export class SSEAcceptor {
     session.keepaliveTimer = timer;
   }
 
+  /** A false write() return is backpressure, not a disconnect. Only actual failures retire a session. */
+  private writeNodeStream(session: SSESession, res: ServerResponse, data: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        if (res.writableEnded || res.destroyed) throw new Error('SSE response is closed');
+        res.write(data, (error) => {
+          if (error) {
+            this.destroySession(session);
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      } catch (error) {
+        this.destroySession(session);
+        reject(error);
+      }
+    });
+  }
+
   private startKeepaliveNode(session: SSESession, res: ServerResponse): void {
+    if (!this.sessions.has(session.sessionId)) return;
     const hb = this.options.heartbeat;
     if (hb?.enabled === false) return;
 
     const interval = hb?.pingInterval ?? 30_000;
     const timer = setInterval(() => {
-      if (!this.sessions.has(session.sessionId) || res.writableEnded) {
+      if (!this.sessions.has(session.sessionId)) {
         clearInterval(timer);
         return;
       }
-      res.write(formatSSEPing());
+      // writeNodeStream already retires the session and its timers on failure.
+      void this.writeNodeStream(session, res, formatSSEPing()).catch(() => {});
     }, interval);
 
     // Store the timer so it can be cleared on session destroy

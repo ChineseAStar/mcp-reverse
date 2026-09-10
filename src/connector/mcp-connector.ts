@@ -15,7 +15,7 @@
 
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ReconnectOptions, Logger } from '../protocol/types.js';
+import type { ReconnectOptions, SSEHeartbeatOptions, Logger } from '../protocol/types.js';
 import { ConnectionState, noopLogger } from '../protocol/types.js';
 import { ReconnectionManager } from '../protocol/reconnect.js';
 
@@ -37,6 +37,10 @@ export interface ReverseMCPClientSSEOptions {
   insecureTls?: boolean;
   /** Timeout for establishing each SSE connection in ms (default: 15000, 0 = disabled) */
   connectTimeout?: number;
+  /** Timeout for MCP initialization after SSE opens (default: 15000 ms, must be positive). */
+  initializationTimeout?: number;
+  /** SSE liveness monitoring; independent of tool execution timeouts. */
+  heartbeat?: SSEHeartbeatOptions;
 }
 
 // ─── Event Types ────────────────────────────────────────────────────
@@ -76,6 +80,8 @@ export class ReverseMCPClient {
   private _started = false;
   private permanentlyStopped = false;
   private lifecycleGeneration = 0;
+  private initializationTimeout = 15_000;
+  private cancelInitialization?: (error: Error) => void;
 
   /** Create a ReverseMCPClient with SSE transport (the common case). */
   static async createSSE(
@@ -94,10 +100,17 @@ export class ReverseMCPClient {
           headers: options.headers,
           insecureTls: options.insecureTls,
           connectTimeout: options.connectTimeout,
+          heartbeat: options.heartbeat,
         },
         log,
       );
-    return new ReverseMCPClient(server, factory, options.reconnect, logger);
+    const client = new ReverseMCPClient(server, factory, options.reconnect, logger);
+    const initializationTimeout = options.initializationTimeout ?? 15_000;
+    if (!Number.isFinite(initializationTimeout) || initializationTimeout <= 0) {
+      throw new RangeError('initializationTimeout must be a positive number');
+    }
+    client.initializationTimeout = initializationTimeout;
+    return client;
   }
 
   private constructor(
@@ -119,6 +132,7 @@ export class ReverseMCPClient {
         multiplier: opts.multiplier ?? 2,
         jitter: opts.jitter !== false,
         maxRetries: opts.maxRetries ?? 0,
+        stableConnectionMs: opts.stableConnectionMs ?? 30_000,
       },
       this.logger,
     );
@@ -165,6 +179,7 @@ export class ReverseMCPClient {
     this.permanentlyStopped = true;
     this.lifecycleGeneration++;
     this.reconnectManager.close();
+    this.cancelInitialization?.(new Error('ReverseMCPClient stopped during initialization'));
     await this.cleanupTransport();
     try { await this.server.close(); } catch { /* already unbound */ }
   }
@@ -187,6 +202,28 @@ export class ReverseMCPClient {
 
     const candidate = this.transportFactory(this.logger);
     this.transport = candidate;
+    const protocol = this.server.server;
+    const previousInitialized = protocol.oninitialized;
+    let resolveInitialized!: () => void;
+    let rejectInitialized!: (error: Error) => void;
+    const initialized = new Promise<void>((resolve, reject) => {
+      resolveInitialized = resolve;
+      rejectInitialized = reject;
+    });
+    // stop()/onclose may reject before server.connect() returns; always observe that rejection.
+    void initialized.catch(() => {});
+    this.cancelInitialization = rejectInitialized;
+    const onInitialized = () => {
+      if (this.transport !== candidate || !this._started || generation !== this.lifecycleGeneration) return;
+      try {
+        previousInitialized?.call(protocol);
+        resolveInitialized();
+      } catch (error) {
+        rejectInitialized(asError(error));
+      }
+    };
+    protocol.oninitialized = onInitialized;
+    let initializationTimer: ReturnType<typeof setTimeout> | undefined;
 
     try {
       // Protocol.connect() owns the transport and invokes transport.start().
@@ -195,13 +232,17 @@ export class ReverseMCPClient {
       await this.server.connect(candidate);
       this.assertActive(generation, candidate);
 
-      this.attachRuntimeHandlers(candidate, generation);
+      this.attachRuntimeHandlers(candidate, generation, rejectInitialized);
 
-      // Covers the small race where the stream closes immediately after
-      // Protocol.connect() resolves but before our runtime close wrapper runs.
+      // Covers closure after Protocol.connect() resolves but before our runtime wrapper runs.
       if (candidate.isConnected === false) {
         throw new Error('Transport closed during connection establishment');
       }
+      initializationTimer = setTimeout(() => {
+        rejectInitialized(new Error(`MCP initialization timed out after ${this.initializationTimeout}ms`));
+      }, this.initializationTimeout);
+      await initialized;
+      this.assertActive(generation, candidate);
     } catch (value) {
       const error = asError(value);
       if (this.transport === candidate) {
@@ -215,6 +256,10 @@ export class ReverseMCPClient {
         this.emit('error', error);
       }
       throw error;
+    } finally {
+      if (initializationTimer) clearTimeout(initializationTimer);
+      if (protocol.oninitialized === onInitialized) protocol.oninitialized = previousInitialized;
+      if (this.cancelInitialization === rejectInitialized) this.cancelInitialization = undefined;
     }
   }
 
@@ -222,13 +267,18 @@ export class ReverseMCPClient {
    * Protocol.connect() replaces transport callbacks. Compose our lifecycle
    * hooks only after it succeeds so this works with both old and new SDKs.
    */
-  private attachRuntimeHandlers(candidate: ManagedTransport, generation: number): void {
+  private attachRuntimeHandlers(
+    candidate: ManagedTransport,
+    generation: number,
+    rejectInitialization: (error: Error) => void,
+  ): void {
     const protocolOnClose = candidate.onclose;
     let closeHandled = false;
 
     candidate.onclose = () => {
       if (closeHandled) return;
       closeHandled = true;
+      rejectInitialization(new Error('Transport closed before MCP initialization settled'));
 
       try {
         protocolOnClose?.();
