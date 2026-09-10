@@ -1,86 +1,49 @@
 # 发布流程
 
-本包推荐使用 **GitHub Actions 自动发布（免密 OIDC）**，不需要管理 npm token。
+本仓库的 `.github/workflows/ci.yml` 在推送 `v*` 标签时执行 Node 20/22/24 测试、类型检查及打包；通过后由 Node 24 使用 npm Trusted Publishing（OIDC）发布。不在日常修复期间自动推送发布标签。
 
----
+## 发布前检查
 
-## 首次发布配置
+- 日常开发在 `codex-cloud` 或临时分支进行。正式发布顺序是：临时分支 → `codex-cloud` → `main` → 版本标签，不直接从未合并的临时分支发布。
+- 工作区若限制主分支操作，只完成 `codex-cloud` 集成；`main` 合并与正式发布交由有权限的维护者执行。
+- 核对待发布提交的 `package.json` 版本、源码、README 与 tarball，确保工作区干净且代码已推送。
+- 执行 `npm install`、`npm run typecheck`、`npm test` 和 `npm pack`。不要把临时产物提交进仓库。
+- npm 包的 Trusted Publisher 应绑定 owner `ChineseAStar`、repository `mcp-reverse`、workflow `ci.yml`（仅文件名）；本 workflow 未设置 GitHub Environment，对应字段留空。若 Actions 发布权限失败，由包维护者在 npm 设置页修正；不要把 token 发到聊天或提交进仓库。
 
-为了让 npm 知道 `ChineseAStar/mcp-reverse` 有权限发布这个包，首次发布请按照以下步骤操作：
+## 1.4.0 发布顺序
 
-1. 临时移除 `package.json` 中的 provenance 配置（因为本地不支持）：
-   ```json
-   // 暂时删掉这两行
-   "publishConfig": {
-     "provenance": true
-   }
+1. 确认修复提交已通过安装包联调，将临时分支合入 `codex-cloud`、推送，并删除已完成的临时分支。
+2. 维护者通过 PR 将 `codex-cloud` 合入 `main`。本仓库主分支是 `main`，不是 `master`。等待合并后提交的 CI 测试、类型检查及构建成功，再对该提交打标签。workflow 技术上也接受其他提交上的 `v*` 标签，但这不应绕过主分支集成。
+3. 维护者在该仓库核对待发布主分支提交（以下命令不切换当前开发分支）：
+
+   ```sh
+   git fetch origin main codex-cloud
+   git merge-base --is-ancestor origin/codex-cloud origin/main
+   git show origin/main:package.json
+   git log -1 --oneline origin/main
    ```
-2. 在本地发一个初始版本（不带 `--provenance`，只是为了创建这个包）：
-   ```bash
-   npm login
-   npm publish
+
+   确认 `codex-cloud` 已完整进入 `main`，且上述 `main` 提交的 CI 成功、package.json 版本为 `1.4.0` 后执行：
+
+   ```sh
+   git tag -a v1.4.0 origin/main -m "Release mcp-reverse 1.4.0"
+   git push origin refs/tags/v1.4.0
    ```
-3. 去 [npm 包设置页](https://www.npmjs.com/package/mcp-reverse/access)（Settings -> Publishing access），将你的 GitHub 仓库绑定为 Trusted Publisher。
-   - GitHub owner: `ChineseAStar`
-   - Repository: `mcp-reverse`
-4. 把 `package.json` 中的 provenance 配置加回来，提交并推送到 GitHub。
 
----
+   版本已在代码中设为 1.4.0，不要再执行 `npm version minor`，也不要强行覆盖已存在的标签。
+4. 等标签触发的 GitHub Actions CI / publish 成功后检查：
 
-## 自动发布（日常流程）
+   ```sh
+   npm view mcp-reverse@1.4.0 version
+   ```
 
-之后每次发版，只需要在本地打 tag 并推送到 GitHub 即可，GitHub Actions 会自动处理测试、构建和带有防伪证明（Provenance）的发布。
+5. 然后在 chat-ai 的 `codex-cloud` 分支切换到真实 registry 版本 `mcp-reverse@1.4.0`，重新构建、重启测试服务验证。不能把 `.staff` 下 tarball 路径写进消费者 package.json。
+6. chat-ai 接收端部署兼容 `_meta` 与旧布尔标记的读取逻辑后，再将 staff-mcp 的 `codex-cloud` 合入其 `master` 分支，发布、推广 staff-mcp 1.2.0。测试服务升级不代表正式接收端已部署；推广前需分别确认。
 
-```bash
-# 1. 确保在 main 分支且最新
-git checkout main && git pull
+发布标签保留用于版本追踪和回退。
 
-# 2. 更新版本号（三选一，自动修改 package.json）
-npm version patch    # 1.0.0 → 1.0.1  (修 bug)
-npm version minor    # 1.0.0 → 1.1.0  (加功能)
-npm version major    # 1.0.0 → 2.0.0  (破坏性变更)
+## 回退
 
-# 3. 把改动和 tag 一起推送到 GitHub
-git push --follow-tags
-```
+1.4 没有更改 HTTP 路径、认证或 MCP 消息格式；回退消费者依赖或应用产物即可，不需要数据迁移。旧连接端可继续接入新网关，但其自身的退避缺陷不会因此消失。
 
-推送后，可以在 `https://github.com/ChineseAStar/mcp-reverse/actions` 查看进度。
-成功后，`npm publish --provenance` 会自动由 GitHub Actions 带着身份凭证执行。
-
----
-
-## 纯手动发布（备选）
-
-如果你不想走 GitHub Actions，也可以随时在本地手动发布。
-*注意：本地环境不支持生成 provenance，手动发布时，请确保移除了 `package.json` 中的 `provenance: true` 配置，并且不要加 `--provenance` 参数。*
-
-```bash
-npm login
-npm publish
-```
-
----
-
-## 版本号规则（SemVer）
-
-```
-1.2.3
-│ │ │
-│ │ └─ patch：修 bug，不影响 API
-│ └─── minor：新功能，向后兼容
-└───── major：破坏性变更，不兼容旧版
-```
-
-| 改动类型 | 命令 | 示例 |
-|----------|------|------|
-| 修一个 bug | `npm version patch` | 1.0.0 → 1.0.1 |
-| 加一个 Transport 选项 | `npm version minor` | 1.0.1 → 1.1.0 |
-| 改 `start()` 签名 | `npm version major` | 1.1.0 → 2.0.0 |
-
----
-
-## 发布后
-
-1. 去 [npm 页面](https://www.npmjs.com/package/mcp-reverse) 确认新版本已上线
-2. 去 [GitHub Releases](https://github.com/ChineseAStar/mcp-reverse/releases) 写一下 Release Notes
-3. 在 chat-ai 项目中 `npm update mcp-reverse`
+`connected` 在 1.4 起表示 MCP 初始化完成。直接使用 `ReconnectionManager` 的调用方还应注意：成功后的尝试次数会保留到连接稳定后断开才清零。若确实需要旧的立即重置行为，可显式设置 `stableConnectionMs: 0`。

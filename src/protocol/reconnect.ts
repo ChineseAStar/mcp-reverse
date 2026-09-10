@@ -17,6 +17,7 @@ export class ReconnectionManager {
   private options: Required<ReconnectOptions>;
   private logger: Logger;
   private attempt: number = 0;
+  private readyAt?: number;
   private timer?: ReturnType<typeof setTimeout>;
   private inFlight: boolean = false;
   private activeAttemptGeneration?: number;
@@ -35,7 +36,11 @@ export class ReconnectionManager {
       multiplier: options.multiplier ?? 2,
       jitter: options.jitter !== false,
       maxRetries: options.maxRetries ?? 0,
+      stableConnectionMs: options.stableConnectionMs ?? 30_000,
     };
+    if (!Number.isFinite(this.options.stableConnectionMs) || this.options.stableConnectionMs < 0) {
+      throw new RangeError('stableConnectionMs must be a non-negative number');
+    }
     this.logger = logger ?? { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
   }
 
@@ -91,6 +96,7 @@ export class ReconnectionManager {
 
     this.generation++;
     this.attempt = 0;
+    this.readyAt = undefined;
     this.retryRequested = false;
     this.cancelTimer();
     this.setState(ConnectionState.CONNECTING);
@@ -110,7 +116,7 @@ export class ReconnectionManager {
     }
 
     this.retryRequested = false;
-    this.attempt = 0;
+    if (this.state !== ConnectionState.CONNECTED) this.readyAt = performance.now();
     this.cancelTimer();
     this.setState(ConnectionState.CONNECTED);
   }
@@ -119,6 +125,10 @@ export class ReconnectionManager {
   async onDisconnected(): Promise<void> {
     if (this.isClosed()) return;
 
+    if (this.readyAt !== undefined && performance.now() - this.readyAt >= this.options.stableConnectionMs) {
+      this.attempt = 0;
+    }
+    this.readyAt = undefined;
     this.retryRequested = true;
 
     if (!this.options.enabled) {
@@ -135,6 +145,7 @@ export class ReconnectionManager {
     this.generation++;
     this.permanentlyClosed = false;
     this.attempt = 0;
+    this.readyAt = undefined;
     this.retryRequested = false;
     this.cancelTimer();
     this.setState(ConnectionState.DISCONNECTED);
@@ -144,6 +155,7 @@ export class ReconnectionManager {
   close(): void {
     this.generation++;
     this.permanentlyClosed = true;
+    this.readyAt = undefined;
     this.retryRequested = false;
     this.cancelTimer();
     this.setState(ConnectionState.CLOSED);
@@ -197,7 +209,7 @@ export class ReconnectionManager {
         shouldRetry = this.options.enabled;
         this.setState(this.options.enabled ? ConnectionState.RECONNECTING : ConnectionState.DISCONNECTED);
       } else {
-        this.attempt = 0;
+        if (this.readyAt === undefined) this.readyAt = performance.now();
         this.setState(ConnectionState.CONNECTED);
       }
     } catch (value) {

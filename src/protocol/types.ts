@@ -30,8 +30,10 @@ export interface ReconnectOptions {
   multiplier?: number;
   /** Whether to add jitter (default: true) */
   jitter?: boolean;
-  /** Maximum number of retries, 0 = infinite (default: 0) */
+  /** Maximum number of attempts in a failure cycle, 0 = infinite (default: 0). */
   maxRetries?: number;
+  /** Reset the failure cycle only after a connection survives this long (default: 30000 ms). */
+  stableConnectionMs?: number;
 }
 
 // ─── Heartbeat ───────────────────────────────────────────────────────

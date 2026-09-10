@@ -122,15 +122,26 @@ const client = await ReverseMCPClient.createSSE(server, {
   serverName: 'office-server',
   authToken: 'secret123',
   connectTimeout: 15000,
-  reconnect: { enabled: true, maxDelay: 30000 },
+  initializationTimeout: 15000,
+  heartbeat: { readTimeout: 45000 },
+  reconnect: { enabled: true, maxDelay: 30000, stableConnectionMs: 30000 },
 });
 
-client.on('connected', () => console.log('Connected'));
+client.on('connected', () => console.log('MCP initialized and ready'));
 client.on('disconnected', () => console.log('Disconnected'));
 client.on('reconnecting', (attempt) => console.log(`Reconnecting (${attempt})`));
 
-await client.start();
+await client.start(); // schedules attempts; does not wait for readiness
 ```
+
+### 1.4 connection lifecycle
+
+- `connected` now means the MCP `notifications/initialized` handshake completed, not merely HTTP 200/SSE open. Existing `server.server.oninitialized` hooks and transport wrappers are preserved.
+- `initializationTimeout` bounds the wait after SSE opens (default 15000 ms, positive). `heartbeat` is forwarded to the low-level SSE reader; neither setting changes a tool execution deadline.
+- Failed handshakes and connections that immediately close continue exponential backoff. A connection must survive `stableConnectionMs` (default 30000 ms) before disconnect resets the failure cycle. No stability timer or parallel retry loop is created. Set `0` only if immediate reset is intentionally required.
+- Web stream enqueue failures, Node response errors/closure, and heartbeat write failures retire the exact session. Asynchronous Node write failures reject `send()`; a `write()` return of `false` is only backpressure.
+- Stop cancels initialization waits and pending retries. Reconnection never replays tool calls: a failed response does not prove a command had no side effects.
+- Wire endpoints, authentication and MCP message formats are unchanged. New gateways can serve old connectors; old connectors keep their own retry defects until upgraded. SDK 1.30.0 is the development baseline; the existing peer range is retained for compatible 1.x consumers.
 
 ---
 
@@ -180,6 +191,7 @@ new SSEReverseClientTransport(options: SSEReverseClientTransportOptions)
   multiplier?: number;     // default: 2
   jitter?: boolean;        // default: true
   maxRetries?: number;     // default: 0 (infinite)
+  stableConnectionMs?: number; // default: 30000ms, 0 = immediate reset
 }
 ```
 
