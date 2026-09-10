@@ -38,7 +38,7 @@
    ```
 
 5. 然后在 chat-ai 的 `codex-cloud` 分支切换到真实 registry 版本 `mcp-reverse@1.4.0`，重新构建、重启测试服务验证。不能把 `.staff` 下 tarball 路径写进消费者 package.json。
-6. chat-ai 接收端部署兼容 `_meta` 与旧布尔标记的读取逻辑后，再将 staff-mcp 的 `codex-cloud` 合入其 `master` 分支，发布、推广 staff-mcp 1.2.0。测试服务升级不代表正式接收端已部署；推广前需分别确认。
+6. 将 staff-mcp 的 `codex-cloud` 合入其 `master` 分支后，可独立发布 staff-mcp 1.2.0，无需等待 chat-ai 部署。chat-ai 只从 `_meta` 读取工具结果元数据，不兼容旧的 `structuredContent.persistent` 写法；旧 chat-ai 仍能连接和调用新版 staff-mcp，但不识别新的技能跨轮回填标记。是否需要先升级接收端，取决于是否需要该回填功能。测试服务升级不代表正式接收端已部署。
 
 发布标签保留用于版本追踪和回退。
 
